@@ -1,0 +1,8 @@
+# List of source files containing translatable strings.
+# Please keep this file sorted alphabetically.
+data/com.github.sheep.farm.assets.desktop.in
+data/com.github.sheep.farm.assets.metainfo.xml.in
+data/com.github.sheep.farm.assets.gschema.xml
+src/main.py
+src/window.py
+src/window.ui

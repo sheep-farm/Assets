@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="assets">
+	<schema id="com.github.sheep.farm.assets" path="/com/github/sheep/farm/assets/">
+	</schema>
+</schemalist>

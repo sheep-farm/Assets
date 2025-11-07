@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=assets
+Exec=assets
+Icon=com.github.sheep.farm.assets
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=GTK;
+StartupNotify=true
+DBusActivatable=true
