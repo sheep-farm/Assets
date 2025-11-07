@@ -54,14 +54,21 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Estado de interação
         self.dragging_node = None
         self.hovered_node = None
+        self.focused_node_index = -1  # Índice do nó com foco (-1 = nenhum)
 
         # Configurar eventos de mouse
         self._setup_mouse_events()
+
+        # Configurar eventos de teclado
+        self._setup_keyboard_events()
 
         print(f"✓ Canvas criado com {len(self.nodes)} nós")
         print(f"✓ {len(self.connections)} conexões criadas")
         print("  - Clique para selecionar")
         print("  - Arraste para mover")
+        print("  - TAB/Shift+TAB para navegar")
+        print("  - Setas para mover nó focado")
+        print("  - Delete para remover nó focado")
 
     def _setup_mouse_events(self):
         """Configura controladores de eventos de mouse"""
@@ -83,6 +90,20 @@ class AssetsCanvas(Gtk.DrawingArea):
         motion_controller = Gtk.EventControllerMotion.new()
         motion_controller.connect("motion", self.on_mouse_motion)
         self.add_controller(motion_controller)
+
+    def _setup_keyboard_events(self):
+        """Configura controlador de eventos de teclado"""
+        # O canvas precisa poder receber foco
+        self.set_can_focus(True)
+        self.set_focusable(True)
+
+        # Controlador de teclado
+        key_controller = Gtk.EventControllerKey.new()
+        key_controller.connect("key-pressed", self.on_key_pressed)
+        self.add_controller(key_controller)
+
+        # Dar foco inicial ao canvas
+        self.grab_focus()
 
     def on_mouse_pressed(self, gesture, n_press, x, y):
         """Quando o mouse é pressionado"""
@@ -107,6 +128,12 @@ class AssetsCanvas(Gtk.DrawingArea):
             # Z-order: mover nó para o final da lista (desenha por último = fica em cima)
             self.bring_to_front(clicked_node)
 
+            # Atualizar índice de foco para o nó clicado
+            self.focused_node_index = self.nodes.index(clicked_node)
+        else:
+            # Clicou no vazio - remove foco
+            self.focused_node_index = -1
+
         self.queue_draw()
 
     def bring_to_front(self, node):
@@ -120,6 +147,128 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.nodes.remove(node)
             self.nodes.append(node)
             print(f"  → Trouxe para frente: {node.title}")
+
+    def on_key_pressed(self, controller, keyval, keycode, state):
+        """
+        Processa teclas pressionadas.
+
+        Args:
+            controller: EventControllerKey
+            keyval: Valor da tecla (Gdk.KEY_*)
+            keycode: Código da tecla
+            state: Modificadores (Ctrl, Shift, etc)
+
+        Returns:
+            bool: True se processou a tecla (impede propagação)
+        """
+        from gi.repository import Gdk
+
+        # TAB - Próximo nó
+        if keyval == Gdk.KEY_Tab and not (state & Gdk.ModifierType.SHIFT_MASK):
+            self._focus_next_node()
+            return True
+
+        # Shift+TAB - Nó anterior
+        if keyval == Gdk.KEY_Tab and (state & Gdk.ModifierType.SHIFT_MASK):
+            self._focus_previous_node()
+            return True
+
+        # Escape - Deselecionar tudo
+        if keyval == Gdk.KEY_Escape:
+            self._clear_selection()
+            return True
+
+        # Delete - Remover nó focado
+        if keyval == Gdk.KEY_Delete:
+            self._delete_focused_node()
+            return True
+
+        # Setas - Mover nó focado
+        if self.focused_node_index >= 0 and self.focused_node_index < len(self.nodes):
+            focused = self.nodes[self.focused_node_index]
+            move_speed = 10  # pixels por tecla
+
+            if keyval == Gdk.KEY_Left:
+                focused.move_to(focused.x - move_speed, focused.y)
+                self.queue_draw()
+                return True
+            elif keyval == Gdk.KEY_Right:
+                focused.move_to(focused.x + move_speed, focused.y)
+                self.queue_draw()
+                return True
+            elif keyval == Gdk.KEY_Up:
+                focused.move_to(focused.x, focused.y - move_speed)
+                self.queue_draw()
+                return True
+            elif keyval == Gdk.KEY_Down:
+                focused.move_to(focused.x, focused.y + move_speed)
+                self.queue_draw()
+                return True
+
+        return False  # Não processou - deixa propagar
+
+    def _focus_next_node(self):
+        """Move foco para o próximo nó (TAB)"""
+        if not self.nodes:
+            return
+
+        # Desselecionar atual
+        if 0 <= self.focused_node_index < len(self.nodes):
+            self.nodes[self.focused_node_index].set_selected(False)
+
+        # Próximo índice (circular)
+        self.focused_node_index = (self.focused_node_index + 1) % len(self.nodes)
+
+        # Selecionar novo
+        self.nodes[self.focused_node_index].set_selected(True)
+        print(f"Foco → {self.nodes[self.focused_node_index].title}")
+        self.queue_draw()
+
+    def _focus_previous_node(self):
+        """Move foco para o nó anterior (Shift+TAB)"""
+        if not self.nodes:
+            return
+
+        # Desselecionar atual
+        if 0 <= self.focused_node_index < len(self.nodes):
+            self.nodes[self.focused_node_index].set_selected(False)
+
+        # Índice anterior (circular)
+        self.focused_node_index = (self.focused_node_index - 1) % len(self.nodes)
+
+        # Selecionar novo
+        self.nodes[self.focused_node_index].set_selected(True)
+        print(f"Foco ← {self.nodes[self.focused_node_index].title}")
+        self.queue_draw()
+
+    def _clear_selection(self):
+        """Deseleciona todos os nós (Escape)"""
+        for node in self.nodes:
+            node.set_selected(False)
+        self.focused_node_index = -1
+        print("Seleção limpa")
+        self.queue_draw()
+
+    def _delete_focused_node(self):
+        """Remove o nó que está com foco (Delete)"""
+        if 0 <= self.focused_node_index < len(self.nodes):
+            node_to_delete = self.nodes[self.focused_node_index]
+
+            # Remover conexões associadas ao nó
+            self.connections = [
+                conn for conn in self.connections
+                if conn[0] != node_to_delete and conn[2] != node_to_delete
+            ]
+
+            # Remover o nó
+            self.nodes.remove(node_to_delete)
+            print(f"✗ Removido: {node_to_delete.title}")
+
+            # Ajustar índice de foco
+            if self.focused_node_index >= len(self.nodes):
+                self.focused_node_index = len(self.nodes) - 1
+
+            self.queue_draw()
 
     def on_mouse_released(self, gesture, n_press, x, y):
         """Quando o mouse é solto"""
@@ -142,14 +291,13 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Enquanto arrasta"""
         if self.dragging_node:
             # Pegar posição inicial do drag
-            success, start_x, start_y = gesture.get_start_point()
-            if success:
-                # Calcular posição atual
-                current_x = start_x + offset_x
-                current_y = start_y + offset_y
-                # Atualizar posição do nó
-                self.dragging_node.update_drag(current_x, current_y)
-                self.queue_draw()
+            start_x, start_y = gesture.get_start_point()
+            # Calcular posição atual
+            current_x = start_x + offset_x
+            current_y = start_y + offset_y
+            # Atualizar posição do nó
+            self.dragging_node.update_drag(current_x, current_y)
+            self.queue_draw()
 
     def on_drag_end(self, gesture, offset_x, offset_y):
         """Quando termina de arrastar"""
