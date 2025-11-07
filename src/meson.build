@@ -2,9 +2,12 @@ pkgdatadir = get_option('prefix') / get_option('datadir') / meson.project_name()
 moduledir = pkgdatadir / 'assets'
 gnome = import('gnome')
 
+subdir('blp')
+
 gnome.compile_resources('assets',
   'assets.gresource.xml',
   gresource_bundle: true,
+  dependencies: blueprints,
   install: true,
   install_dir: pkgdatadir,
 )
@@ -30,6 +33,8 @@ assets_sources = [
   '__init__.py',
   'main.py',
   'window.py',
+  'yahoo_request.py',
+  'fred_request.py'
 ]
 
 install_data(assets_sources, install_dir: moduledir)

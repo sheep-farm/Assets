@@ -13,6 +13,7 @@ gnome = import('gnome')
 subdir('data')
 subdir('src')
 subdir('po')
+subdir('wheels')
 
 gnome.post_install(
      glib_compile_schemas: true,
