@@ -34,7 +34,8 @@ assets_sources = [
   'main.py',
   'window.py',
   'yahoo_request.py',
-  'fred_request.py'
+  'fred_request.py',
+  'node.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)
