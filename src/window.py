@@ -55,6 +55,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.dragging_node = None
         self.hovered_node = None
         self.focused_node_index = -1  # Índice do nó com foco (-1 = nenhum)
+        self.clipboard_node = None  # Nó copiado para clipboard
 
         # Configurar eventos de mouse
         self._setup_mouse_events()
@@ -69,6 +70,9 @@ class AssetsCanvas(Gtk.DrawingArea):
         print("  - TAB/Shift+TAB para navegar")
         print("  - Setas para mover nó focado")
         print("  - Delete para remover nó focado")
+        print("  - Ctrl+C para copiar")
+        print("  - Ctrl+V para colar")
+        print("  - Ctrl+D para duplicar")
 
     def _setup_mouse_events(self):
         """Configura controladores de eventos de mouse"""
@@ -146,6 +150,10 @@ class AssetsCanvas(Gtk.DrawingArea):
         if node in self.nodes:
             self.nodes.remove(node)
             self.nodes.append(node)
+            # Atualizar índice de foco se necessário
+            if self.focused_node_index >= 0:
+                # O nó focado agora está no final da lista
+                self.focused_node_index = len(self.nodes) - 1
             print(f"  → Trouxe para frente: {node.title}")
 
     def on_key_pressed(self, controller, keyval, keycode, state):
@@ -162,6 +170,24 @@ class AssetsCanvas(Gtk.DrawingArea):
             bool: True se processou a tecla (impede propagação)
         """
         from gi.repository import Gdk
+
+        # Verificar se Ctrl está pressionado
+        ctrl_pressed = state & Gdk.ModifierType.CONTROL_MASK
+
+        # Ctrl+C - Copiar nó focado
+        if ctrl_pressed and keyval == Gdk.KEY_c:
+            self._copy_focused_node()
+            return True
+
+        # Ctrl+V - Colar nó do clipboard
+        if ctrl_pressed and keyval == Gdk.KEY_v:
+            self._paste_node()
+            return True
+
+        # Ctrl+D - Duplicar nó focado
+        if ctrl_pressed and keyval == Gdk.KEY_d:
+            self._duplicate_focused_node()
+            return True
 
         # TAB - Próximo nó
         if keyval == Gdk.KEY_Tab and not (state & Gdk.ModifierType.SHIFT_MASK):
@@ -270,6 +296,60 @@ class AssetsCanvas(Gtk.DrawingArea):
 
             self.queue_draw()
 
+    def _copy_focused_node(self):
+        """Copia o nó focado para o clipboard (Ctrl+C)"""
+        if 0 <= self.focused_node_index < len(self.nodes):
+            self.clipboard_node = self.nodes[self.focused_node_index]
+            print(f"📋 Copiado: {self.clipboard_node.title}")
+        else:
+            print("⚠️  Nenhum nó selecionado para copiar")
+
+    def _paste_node(self):
+        """Cola o nó do clipboard (Ctrl+V)"""
+        if self.clipboard_node is None:
+            print("⚠️  Clipboard vazio")
+            return
+
+        # Criar novo nó com offset de posição
+        offset = 30  # Deslocamento para não colar em cima
+        new_node = Node(
+            self.clipboard_node.x + offset,
+            self.clipboard_node.y + offset,
+            f"{self.clipboard_node.title} (cópia)",
+            num_inputs=self.clipboard_node.num_inputs,
+            num_outputs=self.clipboard_node.num_outputs
+        )
+
+        # Adicionar à lista
+        self.nodes.append(new_node)
+
+        # NOTA: Não copiamos as conexões porque elas referenciam outros nós
+        # Para copiar conexões seria necessário copiar também os nós conectados
+
+        # Desselecionar todos
+        for node in self.nodes:
+            node.set_selected(False)
+
+        # Selecionar o novo
+        new_node.set_selected(True)
+
+        # Atualizar foco para o índice correto do novo nó
+        self.focused_node_index = self.nodes.index(new_node)
+
+        print(f"📌 Colado: {new_node.title} em ({new_node.x:.0f}, {new_node.y:.0f})")
+        print(f"   Foco atualizado para índice {self.focused_node_index}")
+        self.queue_draw()
+
+    def _duplicate_focused_node(self):
+        """Duplica o nó focado (Ctrl+D) - atalho para copiar+colar"""
+        if 0 <= self.focused_node_index < len(self.nodes):
+            # Copiar
+            self._copy_focused_node()
+            # Colar imediatamente
+            self._paste_node()
+        else:
+            print("⚠️  Nenhum nó selecionado para duplicar")
+
     def on_mouse_released(self, gesture, n_press, x, y):
         """Quando o mouse é solto"""
         if self.dragging_node:
@@ -291,7 +371,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Enquanto arrasta"""
         if self.dragging_node:
             # Pegar posição inicial do drag
-            start_x, start_y = gesture.get_start_point()
+            success, start_x, start_y = gesture.get_start_point()
             # Calcular posição atual
             current_x = start_x + offset_x
             current_y = start_y + offset_y
