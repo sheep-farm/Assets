@@ -57,6 +57,12 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.focused_node_index = -1  # Índice do nó com foco (-1 = nenhum)
         self.clipboard_node = None  # Nó copiado para clipboard
 
+        # Estado para criar conexões
+        self.creating_connection = False  # Está criando uma conexão?
+        self.connection_start_node = None  # Nó de origem
+        self.connection_start_port = None  # Porta de saída
+        self.connection_mouse_pos = (0, 0)  # Posição atual do mouse
+
         # Configurar eventos de mouse
         self._setup_mouse_events()
 
@@ -113,9 +119,22 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Quando o mouse é pressionado"""
         print(f"Click em ({x:.0f}, {y:.0f})")
 
-        # Verificar se clicou em algum nó
+        # Primeiro, verificar se clicou em uma porta de SAÍDA (para criar conexão)
+        for node in reversed(self.nodes):
+            port_index = self._get_output_port_at(node, x, y)
+            if port_index is not None:
+                # Clicou em uma porta de saída - iniciar criação de conexão
+                self.creating_connection = True
+                self.connection_start_node = node
+                self.connection_start_port = port_index
+                self.connection_mouse_pos = (x, y)
+                print(f"🔗 Iniciando conexão de {node.title}.out[{port_index}]")
+                self.queue_draw()
+                return
+
+        # Verificar se clicou em algum nó (corpo do nó, não porta)
         clicked_node = None
-        for node in reversed(self.nodes):  # Começar pelos que estão "em cima"
+        for node in reversed(self.nodes):
             if node.contains_point(x, y):
                 clicked_node = node
                 break
@@ -139,6 +158,46 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.focused_node_index = -1
 
         self.queue_draw()
+
+    def _get_output_port_at(self, node, x, y):
+        """
+        Verifica se (x, y) está sobre uma porta de saída do nó.
+
+        Args:
+            node: Nó a verificar
+            x, y: Coordenadas do clique
+
+        Returns:
+            int: Índice da porta (0, 1, 2...) ou None se não clicou em porta
+        """
+        port_click_radius = 12  # Raio de detecção ao redor da porta
+
+        for i, (port_x, port_y) in enumerate(node.output_ports):
+            distance = ((x - port_x) ** 2 + (y - port_y) ** 2) ** 0.5
+            if distance <= port_click_radius:
+                return i
+
+        return None
+
+    def _get_input_port_at(self, node, x, y):
+        """
+        Verifica se (x, y) está sobre uma porta de entrada do nó.
+
+        Args:
+            node: Nó a verificar
+            x, y: Coordenadas do clique
+
+        Returns:
+            int: Índice da porta (0, 1, 2...) ou None se não clicou em porta
+        """
+        port_click_radius = 12  # Raio de detecção ao redor da porta
+
+        for i, (port_x, port_y) in enumerate(node.input_ports):
+            distance = ((x - port_x) ** 2 + (y - port_y) ** 2) ** 0.5
+            if distance <= port_click_radius:
+                return i
+
+        return None
 
     def bring_to_front(self, node):
         """
@@ -352,10 +411,52 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def on_mouse_released(self, gesture, n_press, x, y):
         """Quando o mouse é solto"""
+        # Se estava criando conexão, tentar finalizar
+        if self.creating_connection:
+            self._finish_connection(x, y)
+            self.creating_connection = False
+            self.connection_start_node = None
+            self.connection_start_port = None
+            self.queue_draw()
+            return
+
+        # Se estava arrastando nó
         if self.dragging_node:
             self.dragging_node.stop_drag()
             self.dragging_node = None
             print("  → Parou de arrastar")
+
+    def _finish_connection(self, x, y):
+        """
+        Finaliza criação de conexão ao soltar mouse em uma porta de entrada.
+
+        Args:
+            x, y: Posição onde soltou o mouse
+        """
+        # Verificar se soltou em uma porta de ENTRADA
+        for node in reversed(self.nodes):
+            port_index = self._get_input_port_at(node, x, y)
+            if port_index is not None:
+                # Soltou em uma porta de entrada válida!
+                # Criar a conexão
+                new_connection = (
+                    self.connection_start_node,
+                    self.connection_start_port,
+                    node,
+                    port_index
+                )
+
+                # Verificar se já existe essa conexão
+                if new_connection not in self.connections:
+                    self.connections.append(new_connection)
+                    print(f"✅ Conexão criada: {self.connection_start_node.title}.out[{self.connection_start_port}] → {node.title}.in[{port_index}]")
+                else:
+                    print(f"⚠️  Conexão já existe")
+
+                return
+
+        # Se chegou aqui, não soltou em uma porta válida
+        print(f"❌ Conexão cancelada (não soltou em porta de entrada)")
 
     def on_drag_begin(self, gesture, start_x, start_y):
         """Quando começa a arrastar"""
@@ -372,12 +473,13 @@ class AssetsCanvas(Gtk.DrawingArea):
         if self.dragging_node:
             # Pegar posição inicial do drag
             success, start_x, start_y = gesture.get_start_point()
-            # Calcular posição atual
-            current_x = start_x + offset_x
-            current_y = start_y + offset_y
-            # Atualizar posição do nó
-            self.dragging_node.update_drag(current_x, current_y)
-            self.queue_draw()
+            if success:
+                # Calcular posição atual
+                current_x = start_x + offset_x
+                current_y = start_y + offset_y
+                # Atualizar posição do nó
+                self.dragging_node.update_drag(current_x, current_y)
+                self.queue_draw()
 
     def on_drag_end(self, gesture, offset_x, offset_y):
         """Quando termina de arrastar"""
@@ -388,6 +490,12 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def on_mouse_motion(self, controller, x, y):
         """Quando o mouse se move (para hover)"""
+        # Se está criando conexão, atualizar posição do mouse
+        if self.creating_connection:
+            self.connection_mouse_pos = (x, y)
+            self.queue_draw()
+            return
+
         # Verificar se está sobre algum nó
         found_hover = False
         for node in reversed(self.nodes):
@@ -447,6 +555,15 @@ class AssetsCanvas(Gtk.DrawingArea):
             # Desenhar se ambas as portas existem
             if start and end:
                 self._draw_connection(context, start, end)
+
+        # Se está criando uma conexão, desenhar linha temporária
+        if self.creating_connection and self.connection_start_node:
+            start = self.connection_start_node.get_output_port_position(self.connection_start_port)
+            if start:
+                # Linha temporária em cor diferente (verde/amarelo)
+                context.set_line_width(3)
+                context.set_source_rgba(0.3, 0.8, 0.3, 0.7)  # Verde semi-transparente
+                self._draw_connection(context, start, self.connection_mouse_pos)
 
     def _draw_connection(self, context, start, end):
         """
