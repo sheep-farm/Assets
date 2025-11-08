@@ -63,6 +63,14 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.connection_start_port = None  # Porta de saída
         self.connection_mouse_pos = (0, 0)  # Posição atual do mouse
 
+        # Estado de zoom e pan
+        self.zoom_level = 1.0  # 1.0 = 100%, 0.5 = 50%, 2.0 = 200%
+        self.pan_offset_x = 0  # Offset horizontal do canvas
+        self.pan_offset_y = 0  # Offset vertical do canvas
+        self.panning = False  # Está arrastando o canvas?
+        self.pan_start_x = 0
+        self.pan_start_y = 0
+
         # Configurar eventos de mouse
         self._setup_mouse_events()
 
@@ -101,6 +109,13 @@ class AssetsCanvas(Gtk.DrawingArea):
         motion_controller.connect("motion", self.on_mouse_motion)
         self.add_controller(motion_controller)
 
+        # Scroll (zoom)
+        scroll_controller = Gtk.EventControllerScroll.new(
+            Gtk.EventControllerScrollFlags.VERTICAL
+        )
+        scroll_controller.connect("scroll", self.on_scroll)
+        self.add_controller(scroll_controller)
+
     def _setup_keyboard_events(self):
         """Configura controlador de eventos de teclado"""
         # O canvas precisa poder receber foco
@@ -115,19 +130,49 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Dar foco inicial ao canvas
         self.grab_focus()
 
+    def _screen_to_canvas(self, screen_x, screen_y):
+        """
+        Converte coordenadas da tela para coordenadas do canvas (com zoom e pan).
+
+        Args:
+            screen_x, screen_y: Coordenadas na tela
+
+        Returns:
+            tuple: (canvas_x, canvas_y)
+        """
+        canvas_x = (screen_x - self.pan_offset_x) / self.zoom_level
+        canvas_y = (screen_y - self.pan_offset_y) / self.zoom_level
+        return (canvas_x, canvas_y)
+
+    def _canvas_to_screen(self, canvas_x, canvas_y):
+        """
+        Converte coordenadas do canvas para coordenadas da tela.
+
+        Args:
+            canvas_x, canvas_y: Coordenadas no canvas
+
+        Returns:
+            tuple: (screen_x, screen_y)
+        """
+        screen_x = canvas_x * self.zoom_level + self.pan_offset_x
+        screen_y = canvas_y * self.zoom_level + self.pan_offset_y
+        return (screen_x, screen_y)
+
     def on_mouse_pressed(self, gesture, n_press, x, y):
         """Quando o mouse é pressionado"""
-        print(f"Click em ({x:.0f}, {y:.0f})")
+        # Converter para coordenadas do canvas
+        canvas_x, canvas_y = self._screen_to_canvas(x, y)
+        print(f"Click em tela ({x:.0f}, {y:.0f}) → canvas ({canvas_x:.0f}, {canvas_y:.0f})")
 
         # Primeiro, verificar se clicou em uma porta de SAÍDA (para criar conexão)
         for node in reversed(self.nodes):
-            port_index = self._get_output_port_at(node, x, y)
+            port_index = self._get_output_port_at(node, canvas_x, canvas_y)
             if port_index is not None:
                 # Clicou em uma porta de saída - iniciar criação de conexão
                 self.creating_connection = True
                 self.connection_start_node = node
                 self.connection_start_port = port_index
-                self.connection_mouse_pos = (x, y)
+                self.connection_mouse_pos = (canvas_x, canvas_y)
                 print(f"🔗 Iniciando conexão de {node.title}.out[{port_index}]")
                 self.queue_draw()
                 return
@@ -135,7 +180,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Verificar se clicou em algum nó (corpo do nó, não porta)
         clicked_node = None
         for node in reversed(self.nodes):
-            if node.contains_point(x, y):
+            if node.contains_point(canvas_x, canvas_y):
                 clicked_node = node
                 break
 
@@ -154,10 +199,40 @@ class AssetsCanvas(Gtk.DrawingArea):
             # Atualizar índice de foco para o nó clicado
             self.focused_node_index = self.nodes.index(clicked_node)
         else:
-            # Clicou no vazio - remove foco
+            # Clicou no vazio - iniciar pan (arrastar canvas)
+            self.panning = True
+            self.pan_start_x = x
+            self.pan_start_y = y
             self.focused_node_index = -1
 
         self.queue_draw()
+
+    def on_scroll(self, controller, dx, dy):
+        """
+        Callback para scroll do mouse (usado para zoom).
+
+        Args:
+            controller: EventControllerScroll
+            dx: Delta horizontal (não usado)
+            dy: Delta vertical (negativo = scroll up = zoom in)
+
+        Returns:
+            bool: True se processou o evento
+        """
+        # Zoom com scroll
+        zoom_speed = 0.1
+        old_zoom = self.zoom_level
+
+        if dy < 0:  # Scroll up = zoom in
+            self.zoom_level = min(self.zoom_level * (1 + zoom_speed), 3.0)  # Max 300%
+        else:  # Scroll down = zoom out
+            self.zoom_level = max(self.zoom_level * (1 - zoom_speed), 0.3)  # Min 30%
+
+        if old_zoom != self.zoom_level:
+            print(f"🔍 Zoom: {self.zoom_level * 100:.0f}%")
+            self.queue_draw()
+
+        return True
 
     def _get_output_port_at(self, node, x, y):
         """
@@ -411,13 +486,20 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def on_mouse_released(self, gesture, n_press, x, y):
         """Quando o mouse é solto"""
+        canvas_x, canvas_y = self._screen_to_canvas(x, y)
+
         # Se estava criando conexão, tentar finalizar
         if self.creating_connection:
-            self._finish_connection(x, y)
+            self._finish_connection(canvas_x, canvas_y)
             self.creating_connection = False
             self.connection_start_node = None
             self.connection_start_port = None
             self.queue_draw()
+            return
+
+        # Se estava fazendo pan
+        if self.panning:
+            self.panning = False
             return
 
         # Se estava arrastando nó
@@ -460,26 +542,43 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def on_drag_begin(self, gesture, start_x, start_y):
         """Quando começa a arrastar"""
+        canvas_x, canvas_y = self._screen_to_canvas(start_x, start_y)
+
+        # Se está fazendo pan, não arrastar nós
+        if self.panning:
+            return
+
         # Verificar se começou a arrastar sobre um nó
         for node in reversed(self.nodes):
-            if node.contains_point(start_x, start_y):
+            if node.contains_point(canvas_x, canvas_y):
                 self.dragging_node = node
-                self.dragging_node.start_drag(start_x, start_y)
+                self.dragging_node.start_drag(canvas_x, canvas_y)
                 print(f"Começou a arrastar: {node.title}")
                 break
 
     def on_drag_update(self, gesture, offset_x, offset_y):
         """Enquanto arrasta"""
+        # Pegar posição inicial do drag
+        (_, start_x, start_y) = gesture.get_start_point()
+
+        # Se está fazendo pan do canvas
+        if self.panning:
+            self.pan_offset_x = (start_x + offset_x) - self.pan_start_x + self.pan_offset_x
+            self.pan_offset_y = (start_y + offset_y) - self.pan_start_y + self.pan_offset_y
+            self.pan_start_x = start_x + offset_x
+            self.pan_start_y = start_y + offset_y
+            self.queue_draw()
+            return
+
+        # Se está arrastando um nó
         if self.dragging_node:
-            # Pegar posição inicial do drag
-            success, start_x, start_y = gesture.get_start_point()
-            if success:
-                # Calcular posição atual
-                current_x = start_x + offset_x
-                current_y = start_y + offset_y
-                # Atualizar posição do nó
-                self.dragging_node.update_drag(current_x, current_y)
-                self.queue_draw()
+            # Calcular posição atual
+            current_x = start_x + offset_x
+            current_y = start_y + offset_y
+            canvas_x, canvas_y = self._screen_to_canvas(current_x, current_y)
+            # Atualizar posição do nó
+            self.dragging_node.update_drag(canvas_x, canvas_y)
+            self.queue_draw()
 
     def on_drag_end(self, gesture, offset_x, offset_y):
         """Quando termina de arrastar"""
@@ -490,16 +589,18 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def on_mouse_motion(self, controller, x, y):
         """Quando o mouse se move (para hover)"""
+        canvas_x, canvas_y = self._screen_to_canvas(x, y)
+
         # Se está criando conexão, atualizar posição do mouse
         if self.creating_connection:
-            self.connection_mouse_pos = (x, y)
+            self.connection_mouse_pos = (canvas_x, canvas_y)
             self.queue_draw()
             return
 
         # Verificar se está sobre algum nó
         found_hover = False
         for node in reversed(self.nodes):
-            if node.contains_point(x, y):
+            if node.contains_point(canvas_x, canvas_y):
                 if node != self.hovered_node:
                     # Entrou em um novo nó
                     if self.hovered_node:
@@ -522,24 +623,49 @@ class AssetsCanvas(Gtk.DrawingArea):
         context.set_source_rgb(1, 1, 1)
         context.paint()
 
-        # Grid de fundo sutil
-        context.set_source_rgb(0.96, 0.96, 0.96)
-        context.set_line_width(1)
+        # Salvar estado do contexto
+        context.save()
 
-        for x in range(0, width, 20):
-            context.move_to(x, 0)
-            context.line_to(x, height)
-        for y in range(0, height, 20):
-            context.move_to(0, y)
-            context.line_to(width, y)
+        # Aplicar transformações de pan e zoom
+        context.translate(self.pan_offset_x, self.pan_offset_y)
+        context.scale(self.zoom_level, self.zoom_level)
+
+        # Grid de fundo sutil (ajustado para zoom)
+        context.set_source_rgb(0.96, 0.96, 0.96)
+        context.set_line_width(1 / self.zoom_level)  # Linha sempre fina
+
+        grid_size = 20
+        # Calcular limites visíveis do grid
+        start_x = int(-self.pan_offset_x / self.zoom_level / grid_size) * grid_size
+        start_y = int(-self.pan_offset_y / self.zoom_level / grid_size) * grid_size
+        end_x = int((width - self.pan_offset_x) / self.zoom_level) + grid_size
+        end_y = int((height - self.pan_offset_y) / self.zoom_level) + grid_size
+
+        for x in range(start_x, end_x, grid_size):
+            context.move_to(x, start_y)
+            context.line_to(x, end_y)
+        for y in range(start_y, end_y, grid_size):
+            context.move_to(start_x, y)
+            context.line_to(end_x, y)
         context.stroke()
 
         # Desenhar todos os nós
         for node in self.nodes:
             node.draw(context)
 
-        # Desenhar algumas conexões de exemplo (linhas entre portas)
+        # Desenhar conexões
         self._draw_example_connections(context)
+
+        # Restaurar estado do contexto
+        context.restore()
+
+        # Desenhar info de zoom/pan (fora da transformação)
+        context.set_source_rgb(0.3, 0.3, 0.3)
+        context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        context.set_font_size(11)
+        info_text = f"Zoom: {self.zoom_level * 100:.0f}% | Pan: ({self.pan_offset_x:.0f}, {self.pan_offset_y:.0f}) | Scroll para zoom, Arraste vazio para pan"
+        context.move_to(10, height - 10)
+        context.show_text(info_text)
 
     def _draw_example_connections(self, context):
         """Desenha todas as conexões armazenadas"""
