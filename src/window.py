@@ -808,7 +808,7 @@ class AssetsWindow(Gtk.ApplicationWindow):
             for node_template in nodes:
                 node_button = Gtk.Button(label=node_template["name"])
                 node_button.set_has_frame(False)
-                node_button.set_xalign(0)
+                node_button.set_halign(Gtk.Align.START)
                 node_button.set_tooltip_text(node_template["description"])
                 node_button.connect("clicked", self.on_node_template_clicked, node_template)
                 categories_box.append(node_button)

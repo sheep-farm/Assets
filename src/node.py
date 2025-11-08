@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Node - Classe para desenhar e gerenciar um nó visual
 """
@@ -59,6 +60,9 @@ class Node:
         self.dragging = False   # Se está sendo arrastado
         self.drag_offset_x = 0  # Offset do mouse ao arrastar
         self.drag_offset_y = 0
+
+        # Código Python do nó
+        self.code = ""  # Será preenchido por templates ou editor
 
     def draw(self, context):
         """
