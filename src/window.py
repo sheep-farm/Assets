@@ -160,6 +160,9 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def on_mouse_pressed(self, gesture, n_press, x, y):
         """Quando o mouse é pressionado"""
+        # IMPORTANTE: Dar foco ao canvas quando clica nele
+        self.grab_focus()
+
         # Converter para coordenadas do canvas
         canvas_x, canvas_y = self._screen_to_canvas(x, y)
         print(f"Click em tela ({x:.0f}, {y:.0f}) → canvas ({canvas_x:.0f}, {canvas_y:.0f})")
@@ -755,6 +758,11 @@ class AssetsWindow(Gtk.ApplicationWindow):
         # Posição inicial do divisor
         self.paned.set_position(250)
 
+        # IMPORTANTE: Garantir que canvas tenha foco para receber atalhos de teclado
+        # Usar GLib.idle_add para garantir que aconteça depois da janela estar pronta
+        from gi.repository import GLib
+        GLib.idle_add(self.canvas.grab_focus)
+
         print("✓ Janela criada")
 
     def _create_library_panel(self):
@@ -808,7 +816,7 @@ class AssetsWindow(Gtk.ApplicationWindow):
             for node_template in nodes:
                 node_button = Gtk.Button(label=node_template["name"])
                 node_button.set_has_frame(False)
-                node_button.set_halign(Gtk.Align.START)
+                node_button.set_halign(Gtk.Align.START)  # GTK4 usa set_halign
                 node_button.set_tooltip_text(node_template["description"])
                 node_button.connect("clicked", self.on_node_template_clicked, node_template)
                 categories_box.append(node_button)
@@ -855,3 +863,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
 
         print(f"✓ Adicionado: {template['name']}")
         self.canvas.queue_draw()
+
+        # Retornar foco para o canvas para atalhos funcionarem
+        self.canvas.grab_focus()
