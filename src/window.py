@@ -62,6 +62,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.connection_start_node = None  # Nó de origem
         self.connection_start_port = None  # Porta de saída
         self.connection_mouse_pos = (0, 0)  # Posição atual do mouse
+        self.selected_connection = None  # Conexão selecionada (tupla ou None)
 
         # Estado de zoom e pan
         self.zoom_level = 1.0  # 1.0 = 100%, 0.5 = 50%, 2.0 = 200%
@@ -167,7 +168,16 @@ class AssetsCanvas(Gtk.DrawingArea):
         canvas_x, canvas_y = self._screen_to_canvas(x, y)
         print(f"Click em tela ({x:.0f}, {y:.0f}) → canvas ({canvas_x:.0f}, {canvas_y:.0f})")
 
-        # Primeiro, verificar se clicou em uma porta de SAÍDA (para criar conexão)
+        # Primeiro, verificar se clicou em uma porta de ENTRADA (para remover conexões - Opção C)
+        for node in reversed(self.nodes):
+            port_index = self._get_input_port_at(node, canvas_x, canvas_y)
+            if port_index is not None:
+                # Clicou em porta de entrada - remover todas conexões dessa porta
+                self._remove_connections_to_input_port(node, port_index)
+                self.queue_draw()
+                return
+
+        # Segundo, verificar se clicou em uma porta de SAÍDA (para criar conexão)
         for node in reversed(self.nodes):
             port_index = self._get_output_port_at(node, canvas_x, canvas_y)
             if port_index is not None:
@@ -180,7 +190,18 @@ class AssetsCanvas(Gtk.DrawingArea):
                 self.queue_draw()
                 return
 
-        # Verificar se clicou em algum nó (corpo do nó, não porta)
+        # Terceiro, verificar se clicou em uma CONEXÃO (linha - Opção A)
+        clicked_connection = self._get_connection_at_point(canvas_x, canvas_y)
+        if clicked_connection:
+            self.selected_connection = clicked_connection
+            print(f"🔗 Conexão selecionada: {clicked_connection[0].title}.out[{clicked_connection[1]}] → {clicked_connection[2].title}.in[{clicked_connection[3]}]")
+            self.queue_draw()
+            return
+        else:
+            # Não clicou em conexão - limpar seleção de conexão
+            self.selected_connection = None
+
+        # Quarto, verificar se clicou em algum nó (corpo do nó, não porta)
         clicked_node = None
         for node in reversed(self.nodes):
             if node.contains_point(canvas_x, canvas_y):
@@ -277,6 +298,121 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return None
 
+    def _get_connection_at_point(self, x, y):
+        """
+        Verifica se (x, y) está próximo a alguma conexão (linha).
+
+        Args:
+            x, y: Coordenadas do clique
+
+        Returns:
+            tuple: Conexão (source_node, out_port, target_node, in_port) ou None
+        """
+        click_tolerance = 8  # Pixels de tolerância para clicar na linha
+
+        for connection in self.connections:
+            source_node, out_port, target_node, in_port = connection
+
+            # Pegar posições das portas
+            start = source_node.get_output_port_position(out_port)
+            end = target_node.get_input_port_position(in_port)
+
+            if not start or not end:
+                continue
+
+            # Verificar se o ponto está próximo da linha (usando curva Bezier simplificada)
+            if self._point_near_bezier(x, y, start, end, click_tolerance):
+                return connection
+
+        return None
+
+    def _point_near_bezier(self, px, py, start, end, tolerance):
+        """
+        Verifica se um ponto está próximo a uma curva Bezier.
+        Usa aproximação por segmentos de linha.
+
+        Args:
+            px, py: Ponto a testar
+            start: (x1, y1) ponto inicial
+            end: (x2, y2) ponto final
+            tolerance: Distância máxima em pixels
+
+        Returns:
+            bool: True se o ponto está próximo da curva
+        """
+        x1, y1 = start
+        x2, y2 = end
+
+        # Calcular pontos de controle (mesma lógica do _draw_connection)
+        distance = abs(x2 - x1)
+        offset = min(distance * 0.5, 100)
+        ctrl1_x = x1 + offset
+        ctrl1_y = y1
+        ctrl2_x = x2 - offset
+        ctrl2_y = y2
+
+        # Aproximar curva Bezier com segmentos de linha
+        num_samples = 20
+        for i in range(num_samples):
+            t = i / num_samples
+            t_next = (i + 1) / num_samples
+
+            # Ponto atual na curva
+            bx = (1-t)**3 * x1 + 3*(1-t)**2*t * ctrl1_x + 3*(1-t)*t**2 * ctrl2_x + t**3 * x2
+            by = (1-t)**3 * y1 + 3*(1-t)**2*t * ctrl1_y + 3*(1-t)*t**2 * ctrl2_y + t**3 * y2
+
+            # Próximo ponto
+            bx_next = (1-t_next)**3 * x1 + 3*(1-t_next)**2*t_next * ctrl1_x + 3*(1-t_next)*t_next**2 * ctrl2_x + t_next**3 * x2
+            by_next = (1-t_next)**3 * y1 + 3*(1-t_next)**2*t_next * ctrl1_y + 3*(1-t_next)*t_next**2 * ctrl2_y + t_next**3 * y2
+
+            # Distância do ponto ao segmento de linha
+            dist = self._point_to_segment_distance(px, py, bx, by, bx_next, by_next)
+            if dist <= tolerance:
+                return True
+
+        return False
+
+    def _point_to_segment_distance(self, px, py, x1, y1, x2, y2):
+        """Calcula distância de um ponto a um segmento de linha"""
+        # Vetor do segmento
+        dx = x2 - x1
+        dy = y2 - y1
+
+        if dx == 0 and dy == 0:
+            # Segmento é um ponto
+            return ((px - x1) ** 2 + (py - y1) ** 2) ** 0.5
+
+        # Projeção do ponto no segmento (parametrizada entre 0 e 1)
+        t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)))
+
+        # Ponto mais próximo no segmento
+        closest_x = x1 + t * dx
+        closest_y = y1 + t * dy
+
+        # Distância
+        return ((px - closest_x) ** 2 + (py - closest_y) ** 2) ** 0.5
+
+    def _remove_connections_to_input_port(self, node, port_index):
+        """
+        Remove todas as conexões que chegam em uma porta de entrada específica (Opção C).
+
+        Args:
+            node: Nó com a porta de entrada
+            port_index: Índice da porta de entrada
+        """
+        # Filtrar conexões que NÃO vão para essa porta
+        before_count = len(self.connections)
+        self.connections = [
+            conn for conn in self.connections
+            if not (conn[2] == node and conn[3] == port_index)
+        ]
+        removed_count = before_count - len(self.connections)
+
+        if removed_count > 0:
+            print(f"✂️  Removidas {removed_count} conexão(ões) de {node.title}.in[{port_index}]")
+        else:
+            print(f"⚠️  Nenhuma conexão em {node.title}.in[{port_index}]")
+
     def bring_to_front(self, node):
         """
         Move um nó para o final da lista (z-order: fica em cima).
@@ -341,9 +477,14 @@ class AssetsCanvas(Gtk.DrawingArea):
             self._clear_selection()
             return True
 
-        # Delete - Remover nó focado
+        # Delete - Remover nó focado OU conexão selecionada
         if keyval == Gdk.KEY_Delete:
-            self._delete_focused_node()
+            # Prioridade: se tem conexão selecionada, remove ela
+            if self.selected_connection:
+                self._delete_selected_connection()
+            else:
+                # Senão, remove nó focado
+                self._delete_focused_node()
             return True
 
         # Setas - Mover nó focado
@@ -431,6 +572,15 @@ class AssetsCanvas(Gtk.DrawingArea):
             if self.focused_node_index >= len(self.nodes):
                 self.focused_node_index = len(self.nodes) - 1
 
+            self.queue_draw()
+
+    def _delete_selected_connection(self):
+        """Remove a conexão selecionada (Delete - Opção A)"""
+        if self.selected_connection and self.selected_connection in self.connections:
+            source_node, out_port, target_node, in_port = self.selected_connection
+            self.connections.remove(self.selected_connection)
+            print(f"✂️  Conexão removida: {source_node.title}.out[{out_port}] → {target_node.title}.in[{in_port}]")
+            self.selected_connection = None
             self.queue_draw()
 
     def _copy_focused_node(self):
@@ -672,24 +822,32 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def _draw_example_connections(self, context):
         """Desenha todas as conexões armazenadas"""
-        context.set_line_width(3)
-        context.set_source_rgba(0.3, 0.6, 0.9, 0.8)  # Azul semi-transparente
 
         # Desenhar cada conexão da lista
-        for source_node, out_port, target_node, in_port in self.connections:
+        for connection in self.connections:
+            source_node, out_port, target_node, in_port = connection
+
             # Pegar posições das portas
             start = source_node.get_output_port_position(out_port)
             end = target_node.get_input_port_position(in_port)
 
             # Desenhar se ambas as portas existem
             if start and end:
+                # Cor diferente se está selecionada
+                if connection == self.selected_connection:
+                    context.set_line_width(4)
+                    context.set_source_rgba(1.0, 0.3, 0.3, 0.9)  # Vermelho para selecionada
+                else:
+                    context.set_line_width(3)
+                    context.set_source_rgba(0.3, 0.6, 0.9, 0.8)  # Azul normal
+
                 self._draw_connection(context, start, end)
 
         # Se está criando uma conexão, desenhar linha temporária
         if self.creating_connection and self.connection_start_node:
             start = self.connection_start_node.get_output_port_position(self.connection_start_port)
             if start:
-                # Linha temporária em cor diferente (verde/amarelo)
+                # Linha temporária em cor diferente (verde)
                 context.set_line_width(3)
                 context.set_source_rgba(0.3, 0.8, 0.3, 0.7)  # Verde semi-transparente
                 self._draw_connection(context, start, self.connection_mouse_pos)
