@@ -724,14 +724,134 @@ class AssetsWindow(Gtk.ApplicationWindow):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.set_default_size(900, 600)
+        self.set_default_size(1200, 700)
 
         # Header
         header = Gtk.HeaderBar()
         self.set_titlebar(header)
 
+        # Botão toggle para mostrar/esconder biblioteca
+        self.library_button = Gtk.ToggleButton(label="📚 Library")
+        self.library_button.set_active(True)
+        self.library_button.connect("toggled", self.on_library_toggle)
+        header.pack_start(self.library_button)
+
+        # Layout principal com Paned (divisor)
+        self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self.set_child(self.paned)
+
+        # Painel esquerdo - Biblioteca de nós
+        self.library_panel = self._create_library_panel()
+        self.paned.set_start_child(self.library_panel)
+        self.paned.set_resize_start_child(False)
+        self.paned.set_shrink_start_child(False)
+
         # Canvas
         self.canvas = AssetsCanvas()
-        self.set_child(self.canvas)
+        self.paned.set_end_child(self.canvas)
+        self.paned.set_resize_end_child(True)
+        self.paned.set_shrink_end_child(False)
+
+        # Posição inicial do divisor
+        self.paned.set_position(250)
 
         print("✓ Janela criada")
+
+    def _create_library_panel(self):
+        """Cria o painel da biblioteca de nós"""
+        from .node_library import get_all_categories, get_nodes_in_category, get_category_icon
+
+        # Box principal do painel
+        panel_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        panel_box.set_size_request(250, -1)
+
+        # Header do painel
+        panel_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        panel_header.set_margin_top(12)
+        panel_header.set_margin_bottom(12)
+        panel_header.set_margin_start(12)
+        panel_header.set_margin_end(12)
+
+        header_label = Gtk.Label(label="Node Library")
+        header_label.set_markup("<b>Node Library</b>")
+        header_label.set_xalign(0)
+        panel_header.append(header_label)
+
+        panel_box.append(panel_header)
+        panel_box.append(Gtk.Separator())
+
+        # ScrolledWindow para a lista
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
+        # Box para as categorias
+        categories_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        categories_box.set_margin_top(12)
+        categories_box.set_margin_bottom(12)
+        categories_box.set_margin_start(12)
+        categories_box.set_margin_end(12)
+
+        # Criar seções para cada categoria
+        for category in get_all_categories():
+            icon = get_category_icon(category)
+
+            # Header da categoria
+            category_header = Gtk.Label()
+            category_header.set_markup(f"<b>{icon} {category}</b>")
+            category_header.set_xalign(0)
+            category_header.set_margin_top(6)
+            categories_box.append(category_header)
+
+            # Nós da categoria
+            nodes = get_nodes_in_category(category)
+            for node_template in nodes:
+                node_button = Gtk.Button(label=node_template["name"])
+                node_button.set_has_frame(False)
+                node_button.set_xalign(0)
+                node_button.set_tooltip_text(node_template["description"])
+                node_button.connect("clicked", self.on_node_template_clicked, node_template)
+                categories_box.append(node_button)
+
+        scrolled.set_child(categories_box)
+        panel_box.append(scrolled)
+
+        # Instruções no rodapé
+        instructions = Gtk.Label()
+        instructions.set_markup("<small>Click to add node to center</small>")
+        instructions.set_margin_top(6)
+        instructions.set_margin_bottom(6)
+        panel_box.append(Gtk.Separator())
+        panel_box.append(instructions)
+
+        return panel_box
+
+    def on_library_toggle(self, button):
+        """Toggle visibilidade da biblioteca"""
+        if button.get_active():
+            self.library_panel.set_visible(True)
+            self.paned.set_position(250)
+        else:
+            self.library_panel.set_visible(False)
+            self.paned.set_position(0)
+
+    def on_node_template_clicked(self, button, template):
+        """Quando clica em um template na biblioteca"""
+        from .node_library import create_node_from_template
+
+        # Criar nó no centro do canvas visível
+        # Calcular posição central considerando zoom e pan
+        center_x = (400 - self.canvas.pan_offset_x) / self.canvas.zoom_level
+        center_y = (300 - self.canvas.pan_offset_y) / self.canvas.zoom_level
+
+        new_node = create_node_from_template(template, center_x, center_y)
+        self.canvas.nodes.append(new_node)
+
+        # Selecionar o novo nó
+        for node in self.canvas.nodes:
+            node.set_selected(False)
+        new_node.set_selected(True)
+        self.canvas.focused_node_index = len(self.canvas.nodes) - 1
+
+        print(f"✓ Adicionado: {template['name']}")
+        self.canvas.queue_draw()
