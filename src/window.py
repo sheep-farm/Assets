@@ -19,6 +19,7 @@
 
 from gi.repository import Adw
 from gi.repository import Gtk
+from gi.repository import Gdk
 
 import cairo
 
@@ -33,23 +34,11 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.set_draw_func(self.on_draw)
 
         # Criar alguns nós de exemplo
-        self.nodes = [
-            Node(50, 50, "Input: Stock Data", num_inputs=0, num_outputs=2),
-            Node(320, 80, "Calculate Returns", num_inputs=1, num_outputs=1),
-            Node(320, 250, "Moving Average", num_inputs=2, num_outputs=1),
-            Node(590, 120, "Plot Chart", num_inputs=2, num_outputs=0),
-            Node(590, 300, "Export CSV", num_inputs=1, num_outputs=0),
-        ]
+        self.nodes = []
 
         # Armazenar conexões como: (nó_origem, porta_saída, nó_destino, porta_entrada)
         # Guarda REFERÊNCIAS aos nós, não índices!
-        self.connections = [
-            (self.nodes[0], 0, self.nodes[1], 0),  # Stock Data out[0] -> Calculate Returns in[0]
-            (self.nodes[0], 1, self.nodes[2], 0),  # Stock Data out[1] -> Moving Average in[0]
-            (self.nodes[1], 0, self.nodes[3], 0),  # Calculate Returns out[0] -> Plot Chart in[0]
-            (self.nodes[2], 0, self.nodes[3], 1),  # Moving Average out[0] -> Plot Chart in[1]
-            (self.nodes[2], 0, self.nodes[4], 0),  # Moving Average out[0] -> Export CSV in[0]
-        ]
+        self.connections = []
 
         # Estado de interação
         self.dragging_node = None
@@ -78,16 +67,16 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Configurar eventos de teclado
         self._setup_keyboard_events()
 
-        print(f"✓ Canvas criado com {len(self.nodes)} nós")
-        print(f"✓ {len(self.connections)} conexões criadas")
-        print("  - Clique para selecionar")
-        print("  - Arraste para mover")
-        print("  - TAB/Shift+TAB para navegar")
-        print("  - Setas para mover nó focado")
-        print("  - Delete para remover nó focado")
-        print("  - Ctrl+C para copiar")
-        print("  - Ctrl+V para colar")
-        print("  - Ctrl+D para duplicar")
+        # print(f"✓ Canvas criado com {len(self.nodes)} nós")
+        # print(f"✓ {len(self.connections)} conexões criadas")
+        # print("  - Clique para selecionar")
+        # print("  - Arraste para mover")
+        # print("  - TAB/Shift+TAB para navegar")
+        # print("  - Setas para mover nó focado")
+        # print("  - Delete para remover nó focado")
+        # print("  - Ctrl+C para copiar")
+        # print("  - Ctrl+V para colar")
+        # print("  - Ctrl+D para duplicar")
 
     def _setup_mouse_events(self):
         """Configura controladores de eventos de mouse"""
@@ -166,13 +155,14 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Converter para coordenadas do canvas
         canvas_x, canvas_y = self._screen_to_canvas(x, y)
-        print(f"Click em tela ({x:.0f}, {y:.0f}) → canvas ({canvas_x:.0f}, {canvas_y:.0f})")
+#        print(f"Click em tela ({x:.0f}, {y:.0f}) → canvas ({canvas_x:.0f}, {canvas_y:.0f})")
 
         # Primeiro, verificar se clicou em uma porta de ENTRADA (para remover conexões - Opção C)
         for node in reversed(self.nodes):
             port_index = self._get_input_port_at(node, canvas_x, canvas_y)
             if port_index is not None:
                 # Clicou em porta de entrada - remover todas conexões dessa porta
+ #               print(f"👆 Clicou em porta de ENTRADA: {node.title}.in[{port_index}]")
                 self._remove_connections_to_input_port(node, port_index)
                 self.queue_draw()
                 return
@@ -186,7 +176,7 @@ class AssetsCanvas(Gtk.DrawingArea):
                 self.connection_start_node = node
                 self.connection_start_port = port_index
                 self.connection_mouse_pos = (canvas_x, canvas_y)
-                print(f"🔗 Iniciando conexão de {node.title}.out[{port_index}]")
+  #              print(f"🔗 Iniciando conexão de {node.title}.out[{port_index}]")
                 self.queue_draw()
                 return
 
@@ -194,7 +184,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         clicked_connection = self._get_connection_at_point(canvas_x, canvas_y)
         if clicked_connection:
             self.selected_connection = clicked_connection
-            print(f"🔗 Conexão selecionada: {clicked_connection[0].title}.out[{clicked_connection[1]}] → {clicked_connection[2].title}.in[{clicked_connection[3]}]")
+   #         print(f"🔗 Conexão selecionada: {clicked_connection[0].title}.out[{clicked_connection[1]}] → {clicked_connection[2].title}.in[{clicked_connection[3]}]")
             self.queue_draw()
             return
         else:
@@ -215,7 +205,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Selecionar o clicado e trazer para frente (z-order)
         if clicked_node:
             clicked_node.set_selected(True)
-            print(f"  → Selecionou: {clicked_node.title}")
+    #        print(f"  → Selecionou: {clicked_node.title}")
 
             # Z-order: mover nó para o final da lista (desenha por último = fica em cima)
             self.bring_to_front(clicked_node)
@@ -253,7 +243,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.zoom_level = max(self.zoom_level * (1 - zoom_speed), 0.3)  # Min 30%
 
         if old_zoom != self.zoom_level:
-            print(f"🔍 Zoom: {self.zoom_level * 100:.0f}%")
+#            print(f"🔍 Zoom: {self.zoom_level * 100:.0f}%")
             self.queue_draw()
 
         return True
@@ -408,10 +398,10 @@ class AssetsCanvas(Gtk.DrawingArea):
         ]
         removed_count = before_count - len(self.connections)
 
-        if removed_count > 0:
-            print(f"✂️  Removidas {removed_count} conexão(ões) de {node.title}.in[{port_index}]")
-        else:
-            print(f"⚠️  Nenhuma conexão em {node.title}.in[{port_index}]")
+        # if removed_count > 0:
+        #     print(f"✂️  Removidas {removed_count} conexão(ões) de {node.title}.in[{port_index}]")
+        # else:
+        #     print(f"⚠️  Nenhuma conexão em {node.title}.in[{port_index}]")
 
     def bring_to_front(self, node):
         """
@@ -427,7 +417,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             if self.focused_node_index >= 0:
                 # O nó focado agora está no final da lista
                 self.focused_node_index = len(self.nodes) - 1
-            print(f"  → Trouxe para frente: {node.title}")
+            # print(f"  → Trouxe para frente: {node.title}")
 
     def on_key_pressed(self, controller, keyval, keycode, state):
         """
@@ -442,7 +432,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         Returns:
             bool: True se processou a tecla (impede propagação)
         """
-        from gi.repository import Gdk
 
         # Verificar se Ctrl está pressionado
         ctrl_pressed = state & Gdk.ModifierType.CONTROL_MASK
@@ -525,7 +514,7 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Selecionar novo
         self.nodes[self.focused_node_index].set_selected(True)
-        print(f"Foco → {self.nodes[self.focused_node_index].title}")
+        # print(f"Foco → {self.nodes[self.focused_node_index].title}")
         self.queue_draw()
 
     def _focus_previous_node(self):
@@ -542,7 +531,7 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Selecionar novo
         self.nodes[self.focused_node_index].set_selected(True)
-        print(f"Foco ← {self.nodes[self.focused_node_index].title}")
+        # print(f"Foco ← {self.nodes[self.focused_node_index].title}")
         self.queue_draw()
 
     def _clear_selection(self):
@@ -550,7 +539,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         for node in self.nodes:
             node.set_selected(False)
         self.focused_node_index = -1
-        print("Seleção limpa")
+        # print("Seleção limpa")
         self.queue_draw()
 
     def _delete_focused_node(self):
@@ -566,7 +555,7 @@ class AssetsCanvas(Gtk.DrawingArea):
 
             # Remover o nó
             self.nodes.remove(node_to_delete)
-            print(f"✗ Removido: {node_to_delete.title}")
+          #  print(f"✗ Removido: {node_to_delete.title}")
 
             # Ajustar índice de foco
             if self.focused_node_index >= len(self.nodes):
@@ -579,7 +568,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         if self.selected_connection and self.selected_connection in self.connections:
             source_node, out_port, target_node, in_port = self.selected_connection
             self.connections.remove(self.selected_connection)
-            print(f"✂️  Conexão removida: {source_node.title}.out[{out_port}] → {target_node.title}.in[{in_port}]")
+           # print(f"✂️  Conexão removida: {source_node.title}.out[{out_port}] → {target_node.title}.in[{in_port}]")
             self.selected_connection = None
             self.queue_draw()
 
@@ -587,14 +576,14 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Copia o nó focado para o clipboard (Ctrl+C)"""
         if 0 <= self.focused_node_index < len(self.nodes):
             self.clipboard_node = self.nodes[self.focused_node_index]
-            print(f"📋 Copiado: {self.clipboard_node.title}")
-        else:
-            print("⚠️  Nenhum nó selecionado para copiar")
+            #print(f"📋 Copiado: {self.clipboard_node.title}")
+        #else:
+            #print("⚠️  Nenhum nó selecionado para copiar")
 
     def _paste_node(self):
         """Cola o nó do clipboard (Ctrl+V)"""
         if self.clipboard_node is None:
-            print("⚠️  Clipboard vazio")
+            #print("⚠️  Clipboard vazio")
             return
 
         # Criar novo nó com offset de posição
@@ -623,8 +612,8 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Atualizar foco para o índice correto do novo nó
         self.focused_node_index = self.nodes.index(new_node)
 
-        print(f"📌 Colado: {new_node.title} em ({new_node.x:.0f}, {new_node.y:.0f})")
-        print(f"   Foco atualizado para índice {self.focused_node_index}")
+        #print(f"📌 Colado: {new_node.title} em ({new_node.x:.0f}, {new_node.y:.0f})")
+        #print(f"   Foco atualizado para índice {self.focused_node_index}")
         self.queue_draw()
 
     def _duplicate_focused_node(self):
@@ -634,8 +623,148 @@ class AssetsCanvas(Gtk.DrawingArea):
             self._copy_focused_node()
             # Colar imediatamente
             self._paste_node()
-        else:
-            print("⚠️  Nenhum nó selecionado para duplicar")
+        #else:
+         #   print("⚠️  Nenhum nó selecionado para duplicar")
+
+    def execute_graph(self):
+        """
+        Executa o grafo completo em ordem topológica.
+
+        Returns:
+            bool: True se execução foi bem sucedida, False caso contrário
+        """
+        if not self.nodes:
+            print("⚠️  Nenhum nó para executar")
+            return False
+
+        # 1. Resolver ordem topológica
+        execution_order = self._topological_sort()
+
+        if execution_order is None:
+            print("❌ Erro: Grafo contém ciclos! Não é possível executar.")
+            return False
+
+        print(f"📋 Ordem de execução: {[node.title for node in execution_order]}")
+        print()
+
+        # 2. Dicionário para armazenar resultados de cada nó
+        node_results = {}
+
+        # 3. Executar cada nó em ordem
+        for i, node in enumerate(execution_order, 1):
+          #  print(f"[{i}/{len(execution_order)}] Executando: {node.title}")
+
+            try:
+                # Coletar inputs deste nó
+                inputs = self._collect_node_inputs(node, node_results)
+
+                # Executar código do nó
+                outputs = self._execute_node_code(node, inputs)
+
+                # Armazenar resultados
+                node_results[node] = outputs
+
+           #     print(f"  ✓ Saídas: {outputs}")
+
+            except Exception as e:
+                print(f"  ❌ Erro ao executar nó: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+
+        return True
+
+    def _topological_sort(self):
+        """
+        Ordena os nós em ordem topológica (dependências primeiro).
+
+        Returns:
+            list: Lista de nós em ordem de execução, ou None se houver ciclos
+        """
+        # Construir grafo de dependências
+        in_degree = {node: 0 for node in self.nodes}
+        adjacency = {node: [] for node in self.nodes}
+
+        for source_node, out_port, target_node, in_port in self.connections:
+            adjacency[source_node].append(target_node)
+            in_degree[target_node] += 1
+
+        # Algoritmo de Kahn para ordenação topológica
+        queue = [node for node in self.nodes if in_degree[node] == 0]
+        result = []
+
+        while queue:
+            node = queue.pop(0)
+            result.append(node)
+
+            for neighbor in adjacency[node]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        # Se não processou todos os nós, há ciclos
+        if len(result) != len(self.nodes):
+            return None
+
+        return result
+
+    def _collect_node_inputs(self, node, node_results):
+        """
+        Coleta os inputs de um nó a partir dos resultados dos nós anteriores.
+
+        Args:
+            node: Nó cujos inputs serão coletados
+            node_results: Dicionário com resultados dos nós já executados
+
+        Returns:
+            tuple: Tupla com os inputs do nó
+        """
+        # Inicializar lista de inputs (um por porta de entrada)
+        inputs = [None] * node.num_inputs
+
+        # Preencher inputs baseado nas conexões
+        for source_node, out_port, target_node, in_port in self.connections:
+            if target_node == node:
+                # Esta conexão fornece input para este nó
+                if source_node in node_results:
+                    source_outputs = node_results[source_node]
+                    if out_port < len(source_outputs):
+                        inputs[in_port] = source_outputs[out_port]
+
+        return tuple(inputs)
+
+    def _execute_node_code(self, node, inputs):
+        """
+        Executa o código Python de um nó.
+
+        Args:
+            node: Nó a ser executado
+            inputs: Tupla com inputs do nó
+
+        Returns:
+            tuple: Tupla com outputs do nó
+        """
+        if not node.code or node.code.strip() == "":
+            print(f"  ⚠️  Nó sem código, retornando inputs como outputs")
+            return inputs
+
+        # Transformar o código em uma função
+        # O código já está escrito como corpo de função (com return)
+        code_as_function = "def __node_function(inputs):\n"
+        for line in node.code.split('\n'):
+            code_as_function += f"    {line}\n"
+
+        namespace = {'__builtins__': __builtins__}
+        exec(code_as_function, namespace)
+
+        # Chamar a função com os inputs
+        result = namespace['__node_function'](inputs)
+
+        # Garantir que retorno é tupla
+        if not isinstance(result, tuple):
+            result = (result,)
+
+        return result
 
     def on_mouse_released(self, gesture, n_press, x, y):
         """Quando o mouse é solto"""
@@ -659,7 +788,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         if self.dragging_node:
             self.dragging_node.stop_drag()
             self.dragging_node = None
-            print("  → Parou de arrastar")
+            # print("  → Parou de arrastar")
 
     def _finish_connection(self, x, y):
         """
@@ -684,14 +813,14 @@ class AssetsCanvas(Gtk.DrawingArea):
                 # Verificar se já existe essa conexão
                 if new_connection not in self.connections:
                     self.connections.append(new_connection)
-                    print(f"✅ Conexão criada: {self.connection_start_node.title}.out[{self.connection_start_port}] → {node.title}.in[{port_index}]")
-                else:
-                    print(f"⚠️  Conexão já existe")
+                    # print(f"✅ Conexão criada: {self.connection_start_node.title}.out[{self.connection_start_port}] → {node.title}.in[{port_index}]")
+                # else:
+                    # print(f"⚠️  Conexão já existe")
 
-                return
+                # return
 
         # Se chegou aqui, não soltou em uma porta válida
-        print(f"❌ Conexão cancelada (não soltou em porta de entrada)")
+        # print(f"❌ Conexão cancelada (não soltou em porta de entrada)")
 
     def on_drag_begin(self, gesture, start_x, start_y):
         """Quando começa a arrastar"""
@@ -706,7 +835,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             if node.contains_point(canvas_x, canvas_y):
                 self.dragging_node = node
                 self.dragging_node.start_drag(canvas_x, canvas_y)
-                print(f"Começou a arrastar: {node.title}")
+            #    print(f"Começou a arrastar: {node.title}")
                 break
 
     def on_drag_update(self, gesture, offset_x, offset_y):
@@ -737,7 +866,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Quando termina de arrastar"""
         if self.dragging_node:
             self.dragging_node.stop_drag()
-            print(f"  → Nova posição: ({self.dragging_node.x:.0f}, {self.dragging_node.y:.0f})")
+            #print(f"  → Nova posição: ({self.dragging_node.x:.0f}, {self.dragging_node.y:.0f})")
             self.dragging_node = None
 
     def on_mouse_motion(self, controller, x, y):
@@ -897,6 +1026,11 @@ class AssetsWindow(Gtk.ApplicationWindow):
         self.library_button.connect("toggled", self.on_library_toggle)
         header.pack_start(self.library_button)
 
+        # Botão Run para executar o grafo
+        self.run_button = Gtk.Button(label="▶️ Run")
+        self.run_button.connect("clicked", self.on_run_clicked)
+        header.pack_end(self.run_button)
+
         # Layout principal com Paned (divisor)
         self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.set_child(self.paned)
@@ -921,7 +1055,7 @@ class AssetsWindow(Gtk.ApplicationWindow):
         from gi.repository import GLib
         GLib.idle_add(self.canvas.grab_focus)
 
-        print("✓ Janela criada")
+#        print("✓ Janela criada")
 
     def _create_library_panel(self):
         """Cria o painel da biblioteca de nós"""
@@ -1019,8 +1153,26 @@ class AssetsWindow(Gtk.ApplicationWindow):
         new_node.set_selected(True)
         self.canvas.focused_node_index = len(self.canvas.nodes) - 1
 
-        print(f"✓ Adicionado: {template['name']}")
+ #       print(f"✓ Adicionado: {template['name']}")
         self.canvas.queue_draw()
 
         # Retornar foco para o canvas para atalhos funcionarem
         self.canvas.grab_focus()
+
+    def on_run_clicked(self, button):
+        """Quando clica no botão Run - executa o grafo"""
+#        print("\n" + "=" * 60)
+#        print("▶️  EXECUTANDO GRAFO")
+#        print("=" * 60)
+
+        # Executar o grafo
+        success = self.canvas.execute_graph()
+
+        if success:
+            print("=" * 60)
+            print("✅ EXECUÇÃO CONCLUÍDA COM SUCESSO")
+            print("=" * 60 + "\n")
+        else:
+            print("=" * 60)
+            print("❌ EXECUÇÃO FALHOU")
+            print("=" * 60 + "\n")

@@ -1,3 +1,4 @@
+'numpy-2.3.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl',
 'patsy-1.0.2-py2.py3-none-any.whl',
 'fredapi-0.5.2-py3-none-any.whl',
 'packaging-25.0-py3-none-any.whl',
@@ -5,7 +6,6 @@
 'charset_normalizer-3.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl',
 'statsmodels-0.14.5-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl',
 'python_dateutil-2.9.0.post0-py2.py3-none-any.whl',
-'numpy-2.3.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl',
 'certifi-2025.10.5-py3-none-any.whl',
 'six-1.17.0-py2.py3-none-any.whl',
 'tzdata-2025.2-py2.py3-none-any.whl',

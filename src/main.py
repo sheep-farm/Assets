@@ -19,6 +19,7 @@
 
 import sys
 import gi
+import numpy
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -85,3 +86,4 @@ def main(version):
     """The application's entry point."""
     app = AssetsApplication()
     return app.run(sys.argv)
+
