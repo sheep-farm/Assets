@@ -26,8 +26,9 @@ import cairo
 from pathlib import Path
 
 from .node import Node
-from .node_dialogs import CodeEditorDialog, RenameNodeDialog, NodePropertiesDialog
+from .node_dialogs import CodeEditorDialog, RenameNodeDialog, NodePropertiesDialog, SaveToLibraryDialog
 from .graph_io import GraphSerializer, get_default_save_directory
+from .node_library import _get_library
 
 
 class AssetsCanvas(Gtk.DrawingArea):
@@ -1071,6 +1072,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         menu.append("Edit Code", "canvas.edit-code")
         menu.append("Rename", "canvas.rename")
         menu.append("Properties", "canvas.properties")
+        menu.append("Save to Library", "canvas.save-to-library")
         menu.append("Delete", "canvas.delete")
 
         print(f"✓ Menu criado com 4 itens")
@@ -1183,6 +1185,42 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.context_menu_node = None
         self.queue_draw()
 
+    def save_node_to_library(self):
+        """Salva o nó como template na biblioteca"""
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            return
+
+        node = self.context_menu_node
+        window = self.get_root()
+
+        dialog = SaveToLibraryDialog(window, node)
+        dialog.connect("response", self._on_save_to_library_response, node)
+        dialog.present()
+
+    def _on_save_to_library_response(self, dialog, response, node):
+        """Callback quando dialog de salvar na biblioteca é fechado"""
+        if response == Gtk.ResponseType.OK:
+            info = dialog.get_info()
+
+            # Atualizar título do nó se mudou
+            if info["name"] != node.title:
+                node.title = info["name"]
+
+            # Salvar na biblioteca
+            library = _get_library()
+            success = library.save_node_template(node, info["category"])
+
+            if success:
+                print(f"✓ Nó '{info['name']}' salvo na categoria '{info['category']}'")
+
+                # Recriar painel da biblioteca na janela
+                window = self.get_root()
+                if hasattr(window, '_recreate_library_panel'):
+                    window._recreate_library_panel()
+
+            self.queue_draw()
+        dialog.destroy()
+
 
 class AssetsWindow(Gtk.ApplicationWindow):
     """Janela principal"""
@@ -1269,6 +1307,11 @@ class AssetsWindow(Gtk.ApplicationWindow):
         props_action = Gio.SimpleAction.new("properties", None)
         props_action.connect("activate", lambda a, p: self.canvas.show_node_properties())
         self.canvas.action_group.add_action(props_action)
+
+        # Save to Library action
+        save_lib_action = Gio.SimpleAction.new("save-to-library", None)
+        save_lib_action.connect("activate", lambda a, p: self.canvas.save_node_to_library())
+        self.canvas.action_group.add_action(save_lib_action)
 
         # Delete action
         delete_action = Gio.SimpleAction.new("delete", None)
@@ -1376,6 +1419,24 @@ class AssetsWindow(Gtk.ApplicationWindow):
 
         # Retornar foco para o canvas para atalhos funcionarem
         self.canvas.grab_focus()
+
+    def _recreate_library_panel(self):
+        """Recria o painel da biblioteca (após adicionar novos nós)"""
+        # Remover painel antigo
+        self.paned.set_start_child(None)
+
+        # Criar novo painel
+        self.library_panel = self._create_library_panel()
+        self.paned.set_start_child(self.library_panel)
+
+        # Restaurar visibilidade
+        if self.library_button.get_active():
+            self.library_panel.set_visible(True)
+            self.paned.set_position(250)
+        else:
+            self.library_panel.set_visible(False)
+
+        print("✓ Biblioteca atualizada")
 
     def on_run_clicked(self, button):
         """Quando clica no botão Run - executa o grafo"""
@@ -1487,18 +1548,50 @@ class AssetsWindow(Gtk.ApplicationWindow):
             if file:
                 filepath = file.get_path()
 
-                # Carregar grafo
-                nodes, connections = GraphSerializer.load_graph(filepath)
+                # Carregar grafo (retorna dict com dados brutos)
+                graph_data = GraphSerializer.load_graph(filepath)
 
-                if nodes is not None and connections is not None:
+                if graph_data is not None:
+                    # Deserializar nós
+                    nodes = []
+                    node_id_map = {}
+
+                    for node_data in graph_data.get("nodes", []):
+                        node = Node.from_dict(node_data)
+                        nodes.append(node)
+                        node_id_map[node.id] = node
+
+                    # Deserializar conexões
+                    connections = []
+                    for conn_data in graph_data.get("connections", []):
+                        src_id = conn_data["source_node_id"]
+                        dst_id = conn_data["target_node_id"]
+
+                        if src_id in node_id_map and dst_id in node_id_map:
+                            connection = (
+                                node_id_map[src_id],
+                                conn_data["source_port"],
+                                node_id_map[dst_id],
+                                conn_data["target_port"]
+                            )
+                            connections.append(connection)
+                        else:
+                            print(f"⚠️  Conexão inválida ignorada: {src_id} -> {dst_id}")
+
+                    # Atualizar canvas
                     self.canvas.nodes = nodes
                     self.canvas.connections = connections
                     self.current_file = filepath
                     self.set_title(f"Assets - {Path(filepath).name}")
                     self.canvas.queue_draw()
-                    print(f"✓ Aberto: {filepath}")
+
+                    print(f"✓ Grafo carregado: {filepath}")
+                    print(f"  - {len(nodes)} nós")
+                    print(f"  - {len(connections)} conexões")
                 else:
                     print(f"❌ Falha ao carregar: {filepath}")
         except Exception as e:
             if "dismissed" not in str(e).lower():
                 print(f"❌ Erro ao abrir: {e}")
+                import traceback
+                traceback.print_exc()

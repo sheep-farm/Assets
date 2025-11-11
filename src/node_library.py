@@ -17,13 +17,12 @@ class NodeLibrary:
 
         Args:
             nodes_dir: Diretório contendo arquivos .json de nós.
-                      Se None, usa '~/.nodes' relativo ao arquivo atual.
+                      Se None, usa '~/.nodes' do usuário.
         """
         if nodes_dir is None:
-            # nodes_dir = Path(__file__).parent / "nodes"
-            nodes_dir = "/home/flavio/.nodes"
+            nodes_dir = str(Path.home() / ".nodes")
 
-        self.nodes_dir = Path(nodes_dir)
+        self.nodes_dir = Path(nodes_dir).expanduser()
         self.library: Dict = {}
         self._load_all_nodes()
 
@@ -102,6 +101,80 @@ class NodeLibrary:
                 self._load_node_file(json_file)
             except Exception as e:
                 print(f"❌ Erro ao carregar {json_file.name}: {e}")
+
+    def save_node_template(self, node, category_name: str):
+        """
+        Salva um nó como template na biblioteca.
+
+        Args:
+            node: Objeto Node a ser salvo
+            category_name: Nome da categoria
+
+        Returns:
+            bool: True se salvou com sucesso
+        """
+        try:
+            # Garantir que diretório existe
+            self.nodes_dir.mkdir(parents=True, exist_ok=True)
+
+            # Nome do arquivo: my_nodes.json (arquivo do usuário)
+            user_file = self.nodes_dir / "my_nodes.json"
+
+            # Carregar arquivo existente ou criar novo
+            if user_file.exists():
+                with open(user_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                data = {}
+
+            # Criar categoria se não existir
+            if category_name not in data:
+                data[category_name] = {
+                    "icon": "⭐",  # Ícone padrão para nós customizados
+                    "nodes": []
+                }
+
+            # Criar template do nó
+            node_template = {
+                "name": node.title,
+                "description": f"Custom node: {node.title}",
+                "num_inputs": node.num_inputs,
+                "num_outputs": node.num_outputs,
+                "default_code": node.code.split('\n') if node.code else []
+            }
+
+            # Verificar se já existe nó com mesmo nome
+            existing_nodes = data[category_name]["nodes"]
+            existing_names = [n["name"] for n in existing_nodes]
+
+            if node.title in existing_names:
+                # Substituir existente
+                for i, n in enumerate(existing_nodes):
+                    if n["name"] == node.title:
+                        existing_nodes[i] = node_template
+                        print(f"✓ Nó atualizado: {node.title}")
+                        break
+            else:
+                # Adicionar novo
+                existing_nodes.append(node_template)
+                print(f"✓ Nó adicionado: {node.title}")
+
+            # Salvar arquivo
+            with open(user_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+
+            print(f"💾 Salvo em: {user_file}")
+
+            # Recarregar biblioteca
+            self.reload()
+
+            return True
+
+        except Exception as e:
+            print(f"❌ Erro ao salvar template: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
 
 # Instância global (mantém compatibilidade com código existente)

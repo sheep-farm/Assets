@@ -141,6 +141,88 @@ class RenameNodeDialog(Gtk.Dialog):
         return self.entry.get_text().strip()
 
 
+class SaveToLibraryDialog(Gtk.Dialog):
+    """Dialog para salvar nó na biblioteca"""
+
+    def __init__(self, parent, node):
+        super().__init__(title="Save to Library")
+        self.set_transient_for(parent)
+        self.set_modal(True)
+        self.set_default_size(400, 200)
+
+        self.node = node
+
+        # Adicionar botões
+        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        self.add_button("Save", Gtk.ResponseType.OK)
+        self.set_default_response(Gtk.ResponseType.OK)
+
+        # Content area
+        content = self.get_content_area()
+        content.set_spacing(12)
+        content.set_margin_top(12)
+        content.set_margin_bottom(12)
+        content.set_margin_start(12)
+        content.set_margin_end(12)
+
+        # Informação
+        info_label = Gtk.Label()
+        info_label.set_markup(
+            f"<b>Save node as template</b>\n"
+            f"<small>Node: {node.title}</small>"
+        )
+        info_label.set_xalign(0)
+        content.append(info_label)
+
+        # Nome do template
+        name_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        name_label = Gtk.Label(label="Template Name:")
+        name_label.set_size_request(120, -1)
+        name_label.set_xalign(0)
+        self.name_entry = Gtk.Entry()
+        self.name_entry.set_text(node.title)
+        self.name_entry.set_hexpand(True)
+        self.name_entry.set_activates_default(True)
+        name_box.append(name_label)
+        name_box.append(self.name_entry)
+        content.append(name_box)
+
+        # Categoria
+        category_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        category_label = Gtk.Label(label="Category:")
+        category_label.set_size_request(120, -1)
+        category_label.set_xalign(0)
+        self.category_entry = Gtk.Entry()
+        self.category_entry.set_text("My Nodes")
+        self.category_entry.set_hexpand(True)
+        self.category_entry.set_activates_default(True)
+        category_box.append(category_label)
+        category_box.append(self.category_entry)
+        content.append(category_box)
+
+        # Descrição
+        desc_label = Gtk.Label(label="Description (optional):")
+        desc_label.set_xalign(0)
+        content.append(desc_label)
+
+        self.desc_entry = Gtk.Entry()
+        self.desc_entry.set_placeholder_text(f"Custom node: {node.title}")
+        self.desc_entry.set_activates_default(True)
+        content.append(self.desc_entry)
+
+        # Dar foco ao nome
+        self.name_entry.grab_focus()
+        self.name_entry.select_region(0, -1)
+
+    def get_info(self):
+        """Retorna informações do template"""
+        return {
+            "name": self.name_entry.get_text().strip() or self.node.title,
+            "category": self.category_entry.get_text().strip() or "My Nodes",
+            "description": self.desc_entry.get_text().strip() or f"Custom node: {self.node.title}"
+        }
+
+
 class NodePropertiesDialog(Gtk.Dialog):
     """Dialog completo de propriedades do nó"""
     
