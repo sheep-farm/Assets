@@ -20,10 +20,14 @@
 from gi.repository import Adw
 from gi.repository import Gtk
 from gi.repository import Gdk
+from gi.repository import Gio
 
 import cairo
+from pathlib import Path
 
 from .node import Node
+from .node_dialogs import CodeEditorDialog, RenameNodeDialog, NodePropertiesDialog
+from .graph_io import GraphSerializer, get_default_save_directory
 
 
 class AssetsCanvas(Gtk.DrawingArea):
@@ -67,6 +71,10 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Configurar eventos de teclado
         self._setup_keyboard_events()
 
+        # Configurar action group para menu de contexto
+        self.action_group = Gio.SimpleActionGroup()
+        self.insert_action_group("canvas", self.action_group)
+
         # print(f"✓ Canvas criado com {len(self.nodes)} nós")
         # print(f"✓ {len(self.connections)} conexões criadas")
         # print("  - Clique para selecionar")
@@ -81,8 +89,9 @@ class AssetsCanvas(Gtk.DrawingArea):
     def _setup_mouse_events(self):
         """Configura controladores de eventos de mouse"""
 
-        # Click
+        # Click - configurar para aceitar TODOS os botões
         click_gesture = Gtk.GestureClick.new()
+        click_gesture.set_button(0)  # 0 = todos os botões (esquerdo, direito, meio)
         click_gesture.connect("pressed", self.on_mouse_pressed)
         click_gesture.connect("released", self.on_mouse_released)
         self.add_controller(click_gesture)
@@ -153,8 +162,25 @@ class AssetsCanvas(Gtk.DrawingArea):
         # IMPORTANTE: Dar foco ao canvas quando clica nele
         self.grab_focus()
 
+        # Verificar se é clique com botão direito
+        button = gesture.get_current_button()
+
         # Converter para coordenadas do canvas
         canvas_x, canvas_y = self._screen_to_canvas(x, y)
+
+        # Botão direito: mostrar menu de contexto
+        if button == 3:  # Botão direito
+            print(f"🖱️  Botão direito em ({canvas_x:.0f}, {canvas_y:.0f})")
+            # Verificar se clicou em um nó
+            for node in reversed(self.nodes):
+                if node.contains_point(canvas_x, canvas_y):
+                    print(f"✓ Nó encontrado: {node.title}")
+                    self._show_node_context_menu(node, x, y)
+                    return
+            print("⚠️  Nenhum nó no ponto clicado")
+            return
+
+        # Botão esquerdo: lógica existente
 #        print(f"Click em tela ({x:.0f}, {y:.0f}) → canvas ({canvas_x:.0f}, {canvas_y:.0f})")
 
         # Primeiro, verificar se clicou em uma porta de ENTRADA (para remover conexões - Opção C)
@@ -450,6 +476,27 @@ class AssetsCanvas(Gtk.DrawingArea):
         if ctrl_pressed and keyval == Gdk.KEY_d:
             self._duplicate_focused_node()
             return True
+
+        # E - Editar código do nó focado
+        if keyval == Gdk.KEY_e and not ctrl_pressed:
+            if 0 <= self.focused_node_index < len(self.nodes):
+                self.context_menu_node = self.nodes[self.focused_node_index]
+                self.edit_node_code()
+                return True
+
+        # R - Renomear nó focado
+        if keyval == Gdk.KEY_r and not ctrl_pressed:
+            if 0 <= self.focused_node_index < len(self.nodes):
+                self.context_menu_node = self.nodes[self.focused_node_index]
+                self.rename_node()
+                return True
+
+        # P - Propriedades do nó focado
+        if keyval == Gdk.KEY_p and not ctrl_pressed:
+            if 0 <= self.focused_node_index < len(self.nodes):
+                self.context_menu_node = self.nodes[self.focused_node_index]
+                self.show_node_properties()
+                return True
 
         # TAB - Próximo nó
         if keyval == Gdk.KEY_Tab and not (state & Gdk.ModifierType.SHIFT_MASK):
@@ -1008,6 +1055,126 @@ class AssetsCanvas(Gtk.DrawingArea):
         context.curve_to(ctrl1_x, ctrl1_y, ctrl2_x, ctrl2_y, x2, y2)
         context.stroke()
 
+    def _show_node_context_menu(self, node, x, y):
+        """
+        Mostra menu de contexto para um nó
+
+        Args:
+            node: Nó clicado
+            x, y: Posição do clique (coordenadas da tela)
+        """
+        print(f"📝 Criando menu de contexto para: {node.title}")
+
+        menu = Gio.Menu()
+
+        # Opções do menu
+        menu.append("Edit Code", "canvas.edit-code")
+        menu.append("Rename", "canvas.rename")
+        menu.append("Properties", "canvas.properties")
+        menu.append("Delete", "canvas.delete")
+
+        print(f"✓ Menu criado com 4 itens")
+
+        # Criar popover
+        popover = Gtk.PopoverMenu()
+        popover.set_menu_model(menu)
+        popover.set_parent(self)
+        popover.set_pointing_to(Gdk.Rectangle(x, y, 1, 1))
+
+        # Guardar nó atual para as actions
+        self.context_menu_node = node
+
+        print(f"✓ Popover configurado em ({x}, {y})")
+
+        # Mostrar menu
+        popover.popup()
+        print(f"✓ popup() chamado")
+
+    def edit_node_code(self):
+        """Abre dialog para editar código do nó"""
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            return
+
+        node = self.context_menu_node
+        window = self.get_root()
+
+        dialog = CodeEditorDialog(window, node)
+        dialog.connect("response", self._on_code_editor_response, node)
+        dialog.present()
+
+    def _on_code_editor_response(self, dialog, response, node):
+        """Callback quando dialog de código é fechado"""
+        if response == Gtk.ResponseType.OK:
+            new_code = dialog.get_code()
+            node.code = new_code
+            print(f"✓ Código atualizado: {node.title}")
+            self.queue_draw()
+        dialog.destroy()
+
+    def rename_node(self):
+        """Abre dialog para renomear nó"""
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            return
+
+        node = self.context_menu_node
+        window = self.get_root()
+
+        dialog = RenameNodeDialog(window, node)
+        dialog.connect("response", self._on_rename_response, node)
+        dialog.present()
+
+    def _on_rename_response(self, dialog, response, node):
+        """Callback quando dialog de renomeação é fechado"""
+        if response == Gtk.ResponseType.OK:
+            new_name = dialog.get_name()
+            if new_name:
+                node.title = new_name
+                print(f"✓ Nó renomeado: {new_name}")
+                self.queue_draw()
+        dialog.destroy()
+
+    def show_node_properties(self):
+        """Abre dialog de propriedades do nó"""
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            return
+
+        node = self.context_menu_node
+        window = self.get_root()
+
+        dialog = NodePropertiesDialog(window, node)
+        dialog.connect("response", self._on_properties_response, node)
+        dialog.present()
+
+    def _on_properties_response(self, dialog, response, node):
+        """Callback quando dialog de propriedades é fechado"""
+        if response == Gtk.ResponseType.OK:
+            props = dialog.get_properties()
+
+            # Atualizar propriedades
+            node.title = props["title"]
+            node.num_inputs = props["num_inputs"]
+            node.num_outputs = props["num_outputs"]
+            node.code = props["code"]
+
+            # Recalcular altura do nó
+            max_ports = max(node.num_inputs, node.num_outputs)
+            node.body_height = max_ports * node.HEIGHT_PORT + node.PADDING * 2
+            node.total_height = node.HEIGHT_HEADER + node.body_height
+
+            print(f"✓ Propriedades atualizadas: {node.title}")
+            self.queue_draw()
+        dialog.destroy()
+
+    def delete_context_node(self):
+        """Deleta o nó do menu de contexto"""
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            return
+
+        node = self.context_menu_node
+        self._remove_node(node)
+        self.context_menu_node = None
+        self.queue_draw()
+
 
 class AssetsWindow(Gtk.ApplicationWindow):
     """Janela principal"""
@@ -1016,9 +1183,27 @@ class AssetsWindow(Gtk.ApplicationWindow):
         super().__init__(**kwargs)
         self.set_default_size(1200, 700)
 
+        # Arquivo atual
+        self.current_file = None
+
         # Header
         header = Gtk.HeaderBar()
         self.set_titlebar(header)
+
+        # Botão New
+        new_button = Gtk.Button(label="New")
+        new_button.connect("clicked", self.on_new_clicked)
+        header.pack_start(new_button)
+
+        # Botão Open
+        open_button = Gtk.Button(label="Open")
+        open_button.connect("clicked", self.on_open_clicked)
+        header.pack_start(open_button)
+
+        # Botão Save
+        save_button = Gtk.Button(label="Save")
+        save_button.connect("clicked", self.on_save_clicked)
+        header.pack_start(save_button)
 
         # Botão toggle para mostrar/esconder biblioteca
         self.library_button = Gtk.ToggleButton(label="📚 Library")
@@ -1055,7 +1240,32 @@ class AssetsWindow(Gtk.ApplicationWindow):
         from gi.repository import GLib
         GLib.idle_add(self.canvas.grab_focus)
 
+        # Setup actions para menu de contexto
+        self._setup_actions()
+
 #        print("✓ Janela criada")
+
+    def _setup_actions(self):
+        """Configura actions para menu de contexto"""
+        # Edit Code action
+        edit_action = Gio.SimpleAction.new("edit-code", None)
+        edit_action.connect("activate", lambda a, p: self.canvas.edit_node_code())
+        self.canvas.action_group.add_action(edit_action)
+
+        # Rename action
+        rename_action = Gio.SimpleAction.new("rename", None)
+        rename_action.connect("activate", lambda a, p: self.canvas.rename_node())
+        self.canvas.action_group.add_action(rename_action)
+
+        # Properties action
+        props_action = Gio.SimpleAction.new("properties", None)
+        props_action.connect("activate", lambda a, p: self.canvas.show_node_properties())
+        self.canvas.action_group.add_action(props_action)
+
+        # Delete action
+        delete_action = Gio.SimpleAction.new("delete", None)
+        delete_action.connect("activate", lambda a, p: self.canvas.delete_context_node())
+        self.canvas.action_group.add_action(delete_action)
 
     def _create_library_panel(self):
         """Cria o painel da biblioteca de nós"""
@@ -1176,3 +1386,111 @@ class AssetsWindow(Gtk.ApplicationWindow):
             print("=" * 60)
             print("❌ EXECUÇÃO FALHOU")
             print("=" * 60 + "\n")
+
+    def on_new_clicked(self, button):
+        """Cria novo grafo"""
+        # TODO: Perguntar se quer salvar mudanças antes
+        self.canvas.nodes.clear()
+        self.canvas.connections.clear()
+        self.current_file = None
+        self.set_title("Assets")
+        self.canvas.queue_draw()
+        print("✓ Novo grafo criado")
+
+    def on_save_clicked(self, button):
+        """Salva grafo atual"""
+        if self.current_file:
+            # Salvar no arquivo atual
+            success = GraphSerializer.save_graph(
+                self.canvas.nodes,
+                self.canvas.connections,
+                self.current_file
+            )
+            if success:
+                print(f"✓ Salvo: {self.current_file}")
+        else:
+            # Abrir dialog Save As
+            self.on_save_as()
+
+    def on_save_as(self):
+        """Salva grafo com novo nome"""
+        dialog = Gtk.FileDialog()
+        dialog.set_title("Save Graph")
+        dialog.set_initial_folder(Gio.File.new_for_path(str(get_default_save_directory())))
+        dialog.set_initial_name("untitled.assets")
+
+        # Filter para .assets
+        filter_assets = Gtk.FileFilter()
+        filter_assets.set_name("Assets Files")
+        filter_assets.add_pattern("*.assets")
+
+        filter_list = Gio.ListStore.new(Gtk.FileFilter)
+        filter_list.append(filter_assets)
+        dialog.set_filters(filter_list)
+
+        dialog.save(self, None, self._on_save_dialog_response)
+
+    def _on_save_dialog_response(self, dialog, result):
+        """Callback do dialog de salvar"""
+        try:
+            file = dialog.save_finish(result)
+            if file:
+                filepath = file.get_path()
+
+                # Garantir extensão .assets
+                if not filepath.endswith('.assets'):
+                    filepath += '.assets'
+
+                success = GraphSerializer.save_graph(
+                    self.canvas.nodes,
+                    self.canvas.connections,
+                    filepath
+                )
+
+                if success:
+                    self.current_file = filepath
+                    self.set_title(f"Assets - {Path(filepath).name}")
+                    print(f"✓ Salvo como: {filepath}")
+        except Exception as e:
+            if "dismissed" not in str(e).lower():
+                print(f"❌ Erro ao salvar: {e}")
+
+    def on_open_clicked(self, button):
+        """Abre grafo de arquivo"""
+        dialog = Gtk.FileDialog()
+        dialog.set_title("Open Graph")
+        dialog.set_initial_folder(Gio.File.new_for_path(str(get_default_save_directory())))
+
+        # Filter para .assets
+        filter_assets = Gtk.FileFilter()
+        filter_assets.set_name("Assets Files")
+        filter_assets.add_pattern("*.assets")
+
+        filter_list = Gio.ListStore.new(Gtk.FileFilter)
+        filter_list.append(filter_assets)
+        dialog.set_filters(filter_list)
+
+        dialog.open(self, None, self._on_open_dialog_response)
+
+    def _on_open_dialog_response(self, dialog, result):
+        """Callback do dialog de abrir"""
+        try:
+            file = dialog.open_finish(result)
+            if file:
+                filepath = file.get_path()
+
+                # Carregar grafo
+                nodes, connections = GraphSerializer.load_graph(filepath)
+
+                if nodes is not None and connections is not None:
+                    self.canvas.nodes = nodes
+                    self.canvas.connections = connections
+                    self.current_file = filepath
+                    self.set_title(f"Assets - {Path(filepath).name}")
+                    self.canvas.queue_draw()
+                    print(f"✓ Aberto: {filepath}")
+                else:
+                    print(f"❌ Falha ao carregar: {filepath}")
+        except Exception as e:
+            if "dismissed" not in str(e).lower():
+                print(f"❌ Erro ao abrir: {e}")

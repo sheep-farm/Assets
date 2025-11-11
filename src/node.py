@@ -4,6 +4,7 @@ Node - Classe para desenhar e gerenciar um nó visual
 """
 
 import cairo
+import uuid
 
 
 class Node:
@@ -28,7 +29,7 @@ class Node:
     COLOR_TEXT = (1, 1, 1)           # Branco (header)
     COLOR_TEXT_BODY = (0.2, 0.2, 0.2)  # Preto (corpo)
 
-    def __init__(self, x, y, title="Code Node", num_inputs=2, num_outputs=1):
+    def __init__(self, x, y, title="Code Node", num_inputs=2, num_outputs=1, node_id=None):
         """
         Inicializa um nó.
 
@@ -38,7 +39,9 @@ class Node:
             title: Título do nó
             num_inputs: Número de portas de entrada
             num_outputs: Número de portas de saída
+            node_id: UUID único (gera automaticamente se None)
         """
+        self.id = node_id if node_id else str(uuid.uuid4())
         self.x = x
         self.y = y
         self.title = title
@@ -308,6 +311,45 @@ class Node:
         if 0 <= index < len(self.output_ports):
             return self.output_ports[index]
         return None
+
+    def to_dict(self):
+        """
+        Serializa o nó para um dicionário (para salvar em arquivo).
+        
+        Returns:
+            dict: Representação do nó em dicionário
+        """
+        return {
+            "id": self.id,
+            "x": self.x,
+            "y": self.y,
+            "title": self.title,
+            "num_inputs": self.num_inputs,
+            "num_outputs": self.num_outputs,
+            "code": self.code
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        """
+        Cria um nó a partir de um dicionário (para carregar de arquivo).
+        
+        Args:
+            data: Dicionário com dados do nó
+            
+        Returns:
+            Node: Nova instância do nó
+        """
+        node = cls(
+            x=data["x"],
+            y=data["y"],
+            title=data["title"],
+            num_inputs=data["num_inputs"],
+            num_outputs=data["num_outputs"],
+            node_id=data.get("id")  # Usa ID existente ou gera novo
+        )
+        node.code = data.get("code", "")
+        return node
 
 
 # ============================================================================

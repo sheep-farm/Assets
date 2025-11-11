@@ -36,7 +36,9 @@ assets_sources = [
   'yahoo_request.py',
   'fred_request.py',
   'node.py',
-  'node_library.py'
+  'node_library.py',
+  'node_dialogs.py',
+  'graph_io.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)
