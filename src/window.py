@@ -1061,7 +1061,7 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         Args:
             node: Nó clicado
-            x, y: Posição do clique (coordenadas da tela)
+            x, y: Posição do clique (coordenadas da tela/widget)
         """
         print(f"📝 Criando menu de contexto para: {node.title}")
 
@@ -1079,12 +1079,20 @@ class AssetsCanvas(Gtk.DrawingArea):
         popover = Gtk.PopoverMenu()
         popover.set_menu_model(menu)
         popover.set_parent(self)
-        popover.set_pointing_to(Gdk.Rectangle(x, y, 1, 1))
+
+        # Usar Gdk.Rectangle para posicionar no ponto do clique
+        # x, y já são coordenadas relativas ao widget (DrawingArea)
+        rect = Gdk.Rectangle()
+        rect.x = int(x)
+        rect.y = int(y)
+        rect.width = 1
+        rect.height = 1
+        popover.set_pointing_to(rect)
 
         # Guardar nó atual para as actions
         self.context_menu_node = node
 
-        print(f"✓ Popover configurado em ({x}, {y})")
+        print(f"✓ Popover configurado em ({x:.0f}, {y:.0f})")
 
         # Mostrar menu
         popover.popup()
