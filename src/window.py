@@ -29,6 +29,9 @@ from .node import Node
 from .node_dialogs import CodeEditorDialog, RenameNodeDialog, NodePropertiesDialog, SaveToLibraryDialog
 from .graph_io import GraphSerializer, get_default_save_directory
 from .node_library import _get_library
+from .output_panel import OutputPanel
+from .output_panel import OutputPanel
+from .output_panel import OutputPanel
 
 
 class AssetsCanvas(Gtk.DrawingArea):
@@ -87,7 +90,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         # print("  - Ctrl+V para colar")
         # print("  - Ctrl+D para duplicar")
 
-
     def _setup_mouse_events(self):
         """Configura controladores de eventos de mouse"""
 
@@ -117,7 +119,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         scroll_controller.connect("scroll", self.on_scroll)
         self.add_controller(scroll_controller)
 
-
     def _setup_keyboard_events(self):
         """Configura controlador de eventos de teclado"""
         # O canvas precisa poder receber foco
@@ -131,7 +132,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Dar foco inicial ao canvas
         self.grab_focus()
-
 
     def _screen_to_canvas(self, screen_x, screen_y):
         """
@@ -147,7 +147,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         canvas_y = (screen_y - self.pan_offset_y) / self.zoom_level
         return (canvas_x, canvas_y)
 
-
     def _canvas_to_screen(self, canvas_x, canvas_y):
         """
         Converte coordenadas do canvas para coordenadas da tela.
@@ -161,7 +160,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         screen_x = canvas_x * self.zoom_level + self.pan_offset_x
         screen_y = canvas_y * self.zoom_level + self.pan_offset_y
         return (screen_x, screen_y)
-
 
     def on_mouse_pressed(self, gesture, n_press, x, y):
         """Quando o mouse é pressionado"""
@@ -253,7 +251,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         self.queue_draw()
 
-
     def on_scroll(self, controller, dx, dy):
         """
         Callback para scroll do mouse (usado para zoom).
@@ -281,7 +278,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return True
 
-
     def _get_output_port_at(self, node, x, y):
         """
         Verifica se (x, y) está sobre uma porta de saída do nó.
@@ -302,7 +298,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return None
 
-
     def _get_input_port_at(self, node, x, y):
         """
         Verifica se (x, y) está sobre uma porta de entrada do nó.
@@ -322,7 +317,6 @@ class AssetsCanvas(Gtk.DrawingArea):
                 return i
 
         return None
-
 
     def _get_connection_at_point(self, x, y):
         """
@@ -351,7 +345,6 @@ class AssetsCanvas(Gtk.DrawingArea):
                 return connection
 
         return None
-
 
     def _point_near_bezier(self, px, py, start, end, tolerance):
         """
@@ -399,7 +392,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return False
 
-
     def _point_to_segment_distance(self, px, py, x1, y1, x2, y2):
         """Calcula distância de um ponto a um segmento de linha"""
         # Vetor do segmento
@@ -419,7 +411,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Distância
         return ((px - closest_x) ** 2 + (py - closest_y) ** 2) ** 0.5
-
 
     def _remove_connections_to_input_port(self, node, port_index):
         """
@@ -442,7 +433,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         # else:
         #     print(f"⚠️  Nenhuma conexão em {node.title}.in[{port_index}]")
 
-
     def bring_to_front(self, node):
         """
         Move um nó para o final da lista (z-order: fica em cima).
@@ -458,7 +448,6 @@ class AssetsCanvas(Gtk.DrawingArea):
                 # O nó focado agora está no final da lista
                 self.focused_node_index = len(self.nodes) - 1
             # print(f"  → Trouxe para frente: {node.title}")
-
 
     def on_key_pressed(self, controller, keyval, keycode, state):
         """
@@ -562,7 +551,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return False  # Não processou - deixa propagar
 
-
     def _focus_next_node(self):
         """Move foco para o próximo nó (TAB)"""
         if not self.nodes:
@@ -579,7 +567,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.nodes[self.focused_node_index].set_selected(True)
         # print(f"Foco → {self.nodes[self.focused_node_index].title}")
         self.queue_draw()
-
 
     def _focus_previous_node(self):
         """Move foco para o nó anterior (Shift+TAB)"""
@@ -598,7 +585,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         # print(f"Foco ← {self.nodes[self.focused_node_index].title}")
         self.queue_draw()
 
-
     def _clear_selection(self):
         """Deseleciona todos os nós (Escape)"""
         for node in self.nodes:
@@ -606,7 +592,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.focused_node_index = -1
         # print("Seleção limpa")
         self.queue_draw()
-
 
     def _delete_focused_node(self):
         """Remove o nó que está com foco (Delete)"""
@@ -629,7 +614,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
             self.queue_draw()
 
-
     def _delete_selected_connection(self):
         """Remove a conexão selecionada (Delete - Opção A)"""
         if self.selected_connection and self.selected_connection in self.connections:
@@ -639,7 +623,6 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.selected_connection = None
             self.queue_draw()
 
-
     def _copy_focused_node(self):
         """Copia o nó focado para o clipboard (Ctrl+C)"""
         if 0 <= self.focused_node_index < len(self.nodes):
@@ -647,7 +630,6 @@ class AssetsCanvas(Gtk.DrawingArea):
             #print(f"📋 Copiado: {self.clipboard_node.title}")
         #else:
             #print("⚠️  Nenhum nó selecionado para copiar")
-
 
     def _paste_node(self):
         """Cola o nó do clipboard (Ctrl+V)"""
@@ -685,7 +667,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         #print(f"   Foco atualizado para índice {self.focused_node_index}")
         self.queue_draw()
 
-
     def _duplicate_focused_node(self):
         """Duplica o nó focado (Ctrl+D) - atalho para copiar+colar"""
         if 0 <= self.focused_node_index < len(self.nodes):
@@ -695,7 +676,6 @@ class AssetsCanvas(Gtk.DrawingArea):
             self._paste_node()
         #else:
          #   print("⚠️  Nenhum nó selecionado para duplicar")
-
 
     def execute_graph(self):
         """
@@ -707,6 +687,11 @@ class AssetsCanvas(Gtk.DrawingArea):
         if not self.nodes:
             print("⚠️  Nenhum nó para executar")
             return False
+
+        # Limpar outputs anteriores
+        window = self.get_root()
+        if hasattr(window, 'output_panel'):
+            window.output_panel.clear_all()
 
         # 1. Resolver ordem topológica
         execution_order = self._topological_sort()
@@ -721,30 +706,95 @@ class AssetsCanvas(Gtk.DrawingArea):
         # 2. Dicionário para armazenar resultados de cada nó
         node_results = {}
 
-        # 3. Executar cada nó em ordem
-        for i, node in enumerate(execution_order, 1):
-          #  print(f"[{i}/{len(execution_order)}] Executando: {node.title}")
+        # 3. Capturar stdout
+        import sys
+        from io import StringIO
 
-            try:
-                # Coletar inputs deste nó
-                inputs = self._collect_node_inputs(node, node_results)
+        old_stdout = sys.stdout
+        sys.stdout = captured_output = StringIO()
 
-                # Executar código do nó
-                outputs = self._execute_node_code(node, inputs)
+        try:
+            # 4. Executar cada nó em ordem
+            for i, node in enumerate(execution_order, 1):
+              #  print(f"[{i}/{len(execution_order)}] Executando: {node.title}")
 
-                # Armazenar resultados
-                node_results[node] = outputs
+                try:
+                    # Coletar inputs deste nó
+                    inputs = self._collect_node_inputs(node, node_results)
 
-           #     print(f"  ✓ Saídas: {outputs}")
+                    # Executar código do nó
+                    outputs = self._execute_node_code(node, inputs)
 
-            except Exception as e:
-                print(f"  ❌ Erro ao executar nó: {e}")
-                import traceback
-                traceback.print_exc()
-                return False
+                    # Armazenar resultados
+                    node_results[node] = outputs
 
-        return True
+                    # Processar outputs especiais para o painel
+                    if hasattr(window, 'output_panel'):
+                        for output in outputs:
+                            self._process_special_output(output, node, window.output_panel)
 
+               #     print(f"  ✓ Saídas: {outputs}")
+
+                except Exception as e:
+                    print(f"  ❌ Erro ao executar nó: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                    # Restaurar stdout antes de retornar
+                    sys.stdout = old_stdout
+                    return False
+
+            # Capturar texto do console
+            console_text = captured_output.getvalue()
+
+            # Restaurar stdout
+            sys.stdout = old_stdout
+
+            # Adicionar output do console ao painel
+            if console_text and hasattr(window, 'output_panel'):
+                window.output_panel.console_tab.add_text(console_text)
+
+            # Também printar no stdout real
+            if console_text:
+                print(console_text)
+
+            return True
+
+        except Exception as e:
+            # Garantir que stdout seja restaurado mesmo com erro
+            sys.stdout = old_stdout
+            print(f"❌ Erro na execução: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _process_special_output(self, output, node, output_panel):
+        """
+        Processa outputs especiais e envia para o painel apropriado.
+
+        Args:
+            output: Output do nó
+            node: Nó que gerou o output
+            output_panel: Painel de output
+        """
+        # Se output é dict com chaves especiais, processar
+        if isinstance(output, dict):
+            # Plot matplotlib
+            if "_plot" in output:
+                output_panel.add_plot(output["_plot"], f"Plot from: {node.title}")
+                return
+
+            # Tabela (DataFrame)
+            if "_table" in output:
+                output_panel.add_table(output["_table"], f"Table from: {node.title}")
+                return
+
+            # Dados estruturados
+            if "_data" in output:
+                output_panel.add_data(output["_data"], f"Data from: {node.title}")
+                return
+
+        # Output normal - não fazer nada (só passa para próximo nó)
 
     def _topological_sort(self):
         """
@@ -780,7 +830,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return result
 
-
     def _collect_node_inputs(self, node, node_results):
         """
         Coleta os inputs de um nó a partir dos resultados dos nós anteriores.
@@ -805,7 +854,6 @@ class AssetsCanvas(Gtk.DrawingArea):
                         inputs[in_port] = source_outputs[out_port]
 
         return tuple(inputs)
-
 
     def _execute_node_code(self, node, inputs):
         """
@@ -840,7 +888,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return result
 
-
     def on_mouse_released(self, gesture, n_press, x, y):
         """Quando o mouse é solto"""
         canvas_x, canvas_y = self._screen_to_canvas(x, y)
@@ -864,7 +911,6 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.dragging_node.stop_drag()
             self.dragging_node = None
             # print("  → Parou de arrastar")
-
 
     def _finish_connection(self, x, y):
         """
@@ -898,7 +944,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Se chegou aqui, não soltou em uma porta válida
         # print(f"❌ Conexão cancelada (não soltou em porta de entrada)")
 
-
     def on_drag_begin(self, gesture, start_x, start_y):
         """Quando começa a arrastar"""
         canvas_x, canvas_y = self._screen_to_canvas(start_x, start_y)
@@ -914,7 +959,6 @@ class AssetsCanvas(Gtk.DrawingArea):
                 self.dragging_node.start_drag(canvas_x, canvas_y)
             #    print(f"Começou a arrastar: {node.title}")
                 break
-
 
     def on_drag_update(self, gesture, offset_x, offset_y):
         """Enquanto arrasta"""
@@ -940,14 +984,12 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.dragging_node.update_drag(canvas_x, canvas_y)
             self.queue_draw()
 
-
     def on_drag_end(self, gesture, offset_x, offset_y):
         """Quando termina de arrastar"""
         if self.dragging_node:
             self.dragging_node.stop_drag()
             #print(f"  → Nova posição: ({self.dragging_node.x:.0f}, {self.dragging_node.y:.0f})")
             self.dragging_node = None
-
 
     def on_mouse_motion(self, controller, x, y):
         """Quando o mouse se move (para hover)"""
@@ -978,7 +1020,6 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.hovered_node.set_hovered(False)
             self.hovered_node = None
             self.queue_draw()
-
 
     def on_draw(self, area, context, width, height):
         """Desenha o canvas e todos os nós"""
@@ -1030,7 +1071,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         context.move_to(10, height - 10)
         context.show_text(info_text)
 
-
     def _draw_example_connections(self, context):
         """Desenha todas as conexões armazenadas"""
 
@@ -1063,7 +1103,6 @@ class AssetsCanvas(Gtk.DrawingArea):
                 context.set_source_rgba(0.3, 0.8, 0.3, 0.7)  # Verde semi-transparente
                 self._draw_connection(context, start, self.connection_mouse_pos)
 
-
     def _draw_connection(self, context, start, end):
         """
         Desenha uma conexão curva (Bezier) entre duas portas
@@ -1090,7 +1129,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         context.move_to(x1, y1)
         context.curve_to(ctrl1_x, ctrl1_y, ctrl2_x, ctrl2_y, x2, y2)
         context.stroke()
-
 
     def _show_node_context_menu(self, node, x, y):
         """
@@ -1136,7 +1174,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         popover.popup()
         print(f"✓ popup() chamado")
 
-
     def edit_node_code(self):
         """Abre dialog para editar código do nó"""
         if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
@@ -1149,7 +1186,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         dialog.connect("response", self._on_code_editor_response, node)
         dialog.present()
 
-
     def _on_code_editor_response(self, dialog, response, node):
         """Callback quando dialog de código é fechado"""
         if response == Gtk.ResponseType.OK:
@@ -1158,7 +1194,6 @@ class AssetsCanvas(Gtk.DrawingArea):
             print(f"✓ Código atualizado: {node.title}")
             self.queue_draw()
         dialog.destroy()
-
 
     def rename_node(self):
         """Abre dialog para renomear nó"""
@@ -1172,7 +1207,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         dialog.connect("response", self._on_rename_response, node)
         dialog.present()
 
-
     def _on_rename_response(self, dialog, response, node):
         """Callback quando dialog de renomeação é fechado"""
         if response == Gtk.ResponseType.OK:
@@ -1182,7 +1216,6 @@ class AssetsCanvas(Gtk.DrawingArea):
                 print(f"✓ Nó renomeado: {new_name}")
                 self.queue_draw()
         dialog.destroy()
-
 
     def show_node_properties(self):
         """Abre dialog de propriedades do nó"""
@@ -1195,7 +1228,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         dialog = NodePropertiesDialog(window, node)
         dialog.connect("response", self._on_properties_response, node)
         dialog.present()
-
 
     def _on_properties_response(self, dialog, response, node):
         """Callback quando dialog de propriedades é fechado"""
@@ -1217,7 +1249,6 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.queue_draw()
         dialog.destroy()
 
-
     def delete_context_node(self):
         """Deleta o nó do menu de contexto"""
         if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
@@ -1227,7 +1258,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         self._remove_node(node)
         self.context_menu_node = None
         self.queue_draw()
-
 
     def save_node_to_library(self):
         """Salva o nó como template na biblioteca"""
@@ -1240,7 +1270,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         dialog = SaveToLibraryDialog(window, node)
         dialog.connect("response", self._on_save_to_library_response, node)
         dialog.present()
-
 
     def _on_save_to_library_response(self, dialog, response, node):
         """Callback quando dialog de salvar na biblioteca é fechado"""
@@ -1269,7 +1298,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
 class AssetsWindow(Gtk.ApplicationWindow):
     """Janela principal"""
-
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -1310,7 +1338,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
 
         # Layout principal com Paned (divisor)
         self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        self.set_child(self.paned)
 
         # Painel esquerdo - Biblioteca de nós
         self.library_panel = self._create_library_panel()
@@ -1327,6 +1354,22 @@ class AssetsWindow(Gtk.ApplicationWindow):
         # Posição inicial do divisor
         self.paned.set_position(250)
 
+        # Criar output panel
+        self.output_panel = OutputPanel()
+        self.output_panel.set_size_request(-1, 250)  # Altura mínima
+
+        # Layout vertical: canvas acima, output abaixo
+        main_paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        main_paned.set_start_child(self.paned)  # Canvas + Library
+        main_paned.set_end_child(self.output_panel)  # Output panel
+        main_paned.set_resize_end_child(False)
+        main_paned.set_shrink_end_child(False)
+
+        # Posição inicial (500px para canvas, resto para output)
+        main_paned.set_position(450)
+
+        self.set_child(main_paned)
+
         # IMPORTANTE: Garantir que canvas tenha foco para receber atalhos de teclado
         # Usar GLib.idle_add para garantir que aconteça depois da janela estar pronta
         from gi.repository import GLib
@@ -1336,7 +1379,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
         self._setup_actions()
 
 #        print("✓ Janela criada")
-
 
     def _setup_actions(self):
         """Configura actions para menu de contexto"""
@@ -1364,7 +1406,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
         delete_action = Gio.SimpleAction.new("delete", None)
         delete_action.connect("activate", lambda a, p: self.canvas.delete_context_node())
         self.canvas.action_group.add_action(delete_action)
-
 
     def _create_library_panel(self):
         """Cria o painel da biblioteca de nós"""
@@ -1435,7 +1476,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
 
         return panel_box
 
-
     def on_library_toggle(self, button):
         """Toggle visibilidade da biblioteca"""
         if button.get_active():
@@ -1444,7 +1484,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
         else:
             self.library_panel.set_visible(False)
             self.paned.set_position(0)
-
 
     def on_node_template_clicked(self, button, template):
         """Quando clica em um template na biblioteca"""
@@ -1470,7 +1509,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
         # Retornar foco para o canvas para atalhos funcionarem
         self.canvas.grab_focus()
 
-
     def _recreate_library_panel(self):
         """Recria o painel da biblioteca (após adicionar novos nós)"""
         # Remover painel antigo
@@ -1488,7 +1526,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
             self.library_panel.set_visible(False)
 
         print("✓ Biblioteca atualizada")
-
 
     def on_run_clicked(self, button):
         """Quando clica no botão Run - executa o grafo"""
@@ -1508,7 +1545,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
             print("❌ EXECUÇÃO FALHOU")
             print("=" * 60 + "\n")
 
-
     def on_new_clicked(self, button):
         """Cria novo grafo"""
         # TODO: Perguntar se quer salvar mudanças antes
@@ -1518,7 +1554,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
         self.set_title("Assets")
         self.canvas.queue_draw()
         print("✓ Novo grafo criado")
-
 
     def on_save_clicked(self, button):
         """Salva grafo atual"""
@@ -1534,7 +1569,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
         else:
             # Abrir dialog Save As
             self.on_save_as()
-
 
     def on_save_as(self):
         """Salva grafo com novo nome"""
@@ -1553,7 +1587,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
         dialog.set_filters(filter_list)
 
         dialog.save(self, None, self._on_save_dialog_response)
-
 
     def _on_save_dialog_response(self, dialog, result):
         """Callback do dialog de salvar"""
@@ -1580,7 +1613,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
             if "dismissed" not in str(e).lower():
                 print(f"❌ Erro ao salvar: {e}")
 
-
     def on_open_clicked(self, button):
         """Abre grafo de arquivo"""
         dialog = Gtk.FileDialog()
@@ -1597,7 +1629,6 @@ class AssetsWindow(Gtk.ApplicationWindow):
         dialog.set_filters(filter_list)
 
         dialog.open(self, None, self._on_open_dialog_response)
-
 
     def _on_open_dialog_response(self, dialog, result):
         """Callback do dialog de abrir"""

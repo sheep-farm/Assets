@@ -39,6 +39,7 @@ assets_sources = [
   'node_library.py',
   'node_dialogs.py',
   'graph_io.py',
+  'output_panel.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)
