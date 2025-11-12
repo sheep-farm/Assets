@@ -70,11 +70,10 @@ class GraphSerializer:
             filepath: Caminho do arquivo
             
         Returns:
-            tuple: (nodes, connections) ou (None, None) se erro
+            dict: Dicionário com dados brutos {"nodes": [...], "connections": [...]}
+                  ou None se erro
         """
         try:
-            from .node import Node
-            
             with open(filepath, 'r', encoding='utf-8') as f:
                 graph_data = json.load(f)
             
@@ -83,43 +82,18 @@ class GraphSerializer:
             if version != GraphSerializer.VERSION:
                 print(f"⚠️  Versão do arquivo ({version}) diferente da atual ({GraphSerializer.VERSION})")
             
-            # Deserializar nós
-            nodes = []
-            node_id_map = {}  # Map ID -> node object
-            
-            for node_data in graph_data.get("nodes", []):
-                node = Node.from_dict(node_data)
-                nodes.append(node)
-                node_id_map[node.id] = node
-            
-            # Deserializar conexões
-            connections = []
-            for conn_data in graph_data.get("connections", []):
-                src_id = conn_data["source_node_id"]
-                dst_id = conn_data["target_node_id"]
-                
-                if src_id in node_id_map and dst_id in node_id_map:
-                    connection = (
-                        node_id_map[src_id],
-                        conn_data["source_port"],
-                        node_id_map[dst_id],
-                        conn_data["target_port"]
-                    )
-                    connections.append(connection)
-                else:
-                    print(f"⚠️  Conexão inválida ignorada: {src_id} -> {dst_id}")
-            
             print(f"✓ Grafo carregado: {filepath}")
-            print(f"  - {len(nodes)} nós")
-            print(f"  - {len(connections)} conexões")
+            print(f"  - {len(graph_data.get('nodes', []))} nós")
+            print(f"  - {len(graph_data.get('connections', []))} conexões")
             
-            return nodes, connections
+            # Retorna apenas o dict - window.py faz a deserialização
+            return graph_data
             
         except Exception as e:
             print(f"❌ Erro ao carregar grafo: {e}")
             import traceback
             traceback.print_exc()
-            return None, None
+            return None
 
 
 def get_default_save_directory():
