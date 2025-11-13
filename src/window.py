@@ -834,6 +834,8 @@ class AssetsCanvas(Gtk.DrawingArea):
         """
         Coleta os inputs de um nó a partir dos resultados dos nós anteriores.
 
+        MELHORADO: Múltiplas conexões na mesma porta viram lista automaticamente.
+
         Args:
             node: Nó cujos inputs serão coletados
             node_results: Dicionário com resultados dos nós já executados
@@ -844,14 +846,33 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Inicializar lista de inputs (um por porta de entrada)
         inputs = [None] * node.num_inputs
 
-        # Preencher inputs baseado nas conexões
+        # Rastrear múltiplas conexões por porta
+        connections_per_port = [[] for _ in range(node.num_inputs)]
+
+        # Coletar TODAS as conexões para cada porta
         for source_node, out_port, target_node, in_port in self.connections:
             if target_node == node:
                 # Esta conexão fornece input para este nó
                 if source_node in node_results:
                     source_outputs = node_results[source_node]
                     if out_port < len(source_outputs):
-                        inputs[in_port] = source_outputs[out_port]
+                        # Adicionar à lista de conexões desta porta
+                        connections_per_port[in_port].append(source_outputs[out_port])
+
+        # Processar cada porta de entrada
+        for port_idx in range(node.num_inputs):
+            connections = connections_per_port[port_idx]
+
+            if len(connections) == 0:
+                # Nenhuma conexão: manter None
+                inputs[port_idx] = None
+            elif len(connections) == 1:
+                # Uma conexão: valor direto
+                inputs[port_idx] = connections[0]
+            else:
+                # Múltiplas conexões: criar lista
+                inputs[port_idx] = connections
+                print(f"  📌 Porta in[{port_idx}] recebeu {len(connections)} conexões → lista")
 
         return tuple(inputs)
 
