@@ -1349,14 +1349,14 @@ class AssetsWindow(Gtk.ApplicationWindow):
         self.canvas = AssetsCanvas()
         self.paned.set_end_child(self.canvas)
         self.paned.set_resize_end_child(True)
-        self.paned.set_shrink_end_child(False)
+        self.paned.set_shrink_end_child(True)
 
         # Posição inicial do divisor
         self.paned.set_position(250)
 
         # Criar output panel
         self.output_panel = OutputPanel()
-        self.output_panel.set_size_request(-1, 250)  # Altura mínima
+        self.output_panel.set_size_request(-1, 0)  # Altura mínima
 
         # Layout vertical: canvas acima, output abaixo
         main_paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)

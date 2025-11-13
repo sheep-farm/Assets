@@ -245,7 +245,9 @@ class TablesTab(Gtk.Box):
         buf.set_text(table_str)
 
         scrolled = Gtk.ScrolledWindow()
-        scrolled.set_size_request(-1, 320)
+        scrolled.set_hexpand(True)   # ocupa horizontalmente
+        scrolled.set_vexpand(True)   # ocupa verticalmente
+        #scrolled.set_size_request(-1, 320)
         scrolled.set_child(text_view)
 
         tab_label = Gtk.Label(label=title or "Table")
