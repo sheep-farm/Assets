@@ -350,37 +350,3 @@ class Node:
         )
         node.code = data.get("code", "")
         return node
-
-
-# ============================================================================
-# EXEMPLO DE USO / TESTE
-# ============================================================================
-
-if __name__ == '__main__':
-    """Teste visual da classe Node"""
-    print("=" * 60)
-    print("Teste da Classe Node")
-    print("=" * 60)
-
-    # Criar alguns nós de exemplo
-    node1 = Node(50, 50, "Input Data", num_inputs=0, num_outputs=2)
-    node2 = Node(300, 100, "Calculate SMA", num_inputs=2, num_outputs=1)
-    node3 = Node(550, 150, "Plot Result", num_inputs=3, num_outputs=0)
-
-    print(f"✓ Node 1: {node1.title}")
-    print(f"  - Posição: ({node1.x}, {node1.y})")
-    print(f"  - Inputs: {node1.num_inputs}, Outputs: {node1.num_outputs}")
-    print(f"  - Tamanho: {node1.WIDTH}x{node1.total_height}")
-
-    print(f"\n✓ Node 2: {node2.title}")
-    print(f"  - Posição: ({node2.x}, {node2.y})")
-    print(f"  - Inputs: {node2.num_inputs}, Outputs: {node2.num_outputs}")
-
-    print(f"\n✓ Node 3: {node3.title}")
-    print(f"  - Posição: ({node3.x}, {node3.y})")
-    print(f"  - Inputs: {node3.num_inputs}, Outputs: {node3.num_outputs}")
-
-    print("\n" + "=" * 60)
-    print("Classe Node pronta para uso!")
-    print("Use node.draw(cairo_context) para desenhar no canvas")
-    print("=" * 60)
