@@ -16,7 +16,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
-import sys
 
 from gi.repository import Adw
 from gi.repository import Gtk
@@ -721,7 +720,8 @@ class AssetsCanvas(Gtk.DrawingArea):
         try:
             # 5. Executar cada nível em paralelo
             for level_idx, level in enumerate(levels):
-                print(f"⚡ Executando nível {level_idx} ({len(level)} nós em paralelo)...", file=sys.__stdout__)
+                print(f"⚡ Executando nível {level_idx} ({len(level)} nós em paralelo)...",
+                      file=sys.__stdout__)
 
                 # Função para executar um nó
                 def execute_node_wrapper(node):
@@ -782,7 +782,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         except Exception as e:
             # Garantir que stdout seja restaurado mesmo com erro
             sys.stdout = old_stdout
-            print(f"❌ Erro na execução: {e}", file=sys.__stdout__)
+            print(f"❌ Erro na execução: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -790,27 +790,33 @@ class AssetsCanvas(Gtk.DrawingArea):
     def _process_special_output(self, output, node, output_panel):
         """
         Processa outputs especiais e envia para o painel apropriado.
+        Usa GLib.idle_add() para garantir thread-safety ao criar widgets.
 
         Args:
             output: Output do nó
             node: Nó que gerou o output
             output_panel: Painel de output
         """
+        from gi.repository import GLib
+
         # Se output é dict com chaves especiais, processar
         if isinstance(output, dict):
             # Plot matplotlib
             if "_plot" in output:
-                output_panel.add_plot(output["_plot"], f"Plot from: {node.title}")
+                # Agendar para main thread
+                GLib.idle_add(output_panel.add_plot, output["_plot"], f"Plot from: {node.title}")
                 return
 
             # Tabela (DataFrame)
             if "_table" in output:
-                output_panel.add_table(output["_table"], f"Table from: {node.title}")
+                # Agendar para main thread
+                GLib.idle_add(output_panel.add_table, output["_table"], f"Table from: {node.title}")
                 return
 
             # Dados estruturados
             if "_data" in output:
-                output_panel.add_data(output["_data"], f"Data from: {node.title}")
+                # Agendar para main thread
+                GLib.idle_add(output_panel.add_data, output["_data"], f"Data from: {node.title}")
                 return
 
         # Output normal - não fazer nada (só passa para próximo nó)
@@ -928,7 +934,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             else:
                 # Múltiplas conexões: criar lista
                 inputs[port_idx] = connections
-                print(f"  📌 Porta in[{port_idx}] recebeu {len(connections)} conexões → lista", file=sys.__stdout__)
+                print(f"  📌 Porta in[{port_idx}] recebeu {len(connections)} conexões → lista")
 
         return tuple(inputs)
 
@@ -944,7 +950,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             tuple: Tupla com outputs do nó
         """
         if not node.code or node.code.strip() == "":
-            print(f"  ⚠️  Nó sem código, retornando inputs como outputs", file=sys.__stdout__)
+            print(f"  ⚠️  Nó sem código, retornando inputs como outputs")
             return inputs
 
         # Tentar recuperar do cache
@@ -1021,9 +1027,9 @@ class AssetsCanvas(Gtk.DrawingArea):
                 # Verificar se já existe essa conexão
                 if new_connection not in self.connections:
                     self.connections.append(new_connection)
-                    # print(f"✅ Conexão criada: {self.connection_start_node.title}.out[{self.connection_start_port}] → {node.title}.in[{port_index}]", file=sys.__stdout__)
+                    # print(f"✅ Conexão criada: {self.connection_start_node.title}.out[{self.connection_start_port}] → {node.title}.in[{port_index}]")
                 # else:
-                    # print(f"⚠️  Conexão já existe", file=sys.__stdout__)
+                    # print(f"⚠️  Conexão já existe")
 
                 # return
 
@@ -1043,7 +1049,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             if node.contains_point(canvas_x, canvas_y):
                 self.dragging_node = node
                 self.dragging_node.start_drag(canvas_x, canvas_y)
-            #    print(f"Começou a arrastar: {node.title}", file=sys.__stdout__)
+            #    print(f"Começou a arrastar: {node.title}")
                 break
 
     def on_drag_update(self, gesture, offset_x, offset_y):
@@ -1074,7 +1080,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Quando termina de arrastar"""
         if self.dragging_node:
             self.dragging_node.stop_drag()
-            #print(f"  → Nova posição: ({self.dragging_node.x:.0f}, {self.dragging_node.y:.0f})", file=sys.__stdout__)
+            #print(f"  → Nova posição: ({self.dragging_node.x:.0f}, {self.dragging_node.y:.0f})")
             self.dragging_node = None
 
     def on_mouse_motion(self, controller, x, y):
@@ -1254,7 +1260,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Guardar nó atual para as actions
         self.context_menu_node = node
 
-        print(f"✓ Popover configurado em ({x:.0f}, {y:.0f})", file=sys.__stdout__)
+        print(f"✓ Popover configurado em ({x:.0f}, {y:.0f})")
 
         # Mostrar menu
         popover.popup()
@@ -1277,7 +1283,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         if response == Gtk.ResponseType.OK:
             new_code = dialog.get_code()
             node.code = new_code
-            print(f"✓ Código atualizado: {node.title}", file=sys.__stdout__)
+            print(f"✓ Código atualizado: {node.title}")
             self.queue_draw()
         dialog.destroy()
 
@@ -1299,7 +1305,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             new_name = dialog.get_name()
             if new_name:
                 node.title = new_name
-                print(f"✓ Nó renomeado: {new_name}", file=sys.__stdout__)
+                print(f"✓ Nó renomeado: {new_name}")
                 self.queue_draw()
         dialog.destroy()
 
@@ -1331,7 +1337,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             node.body_height = max_ports * node.HEIGHT_PORT + node.PADDING * 2
             node.total_height = node.HEIGHT_HEADER + node.body_height
 
-            print(f"✓ Propriedades atualizadas: {node.title}", file=sys.__stdout__)
+            print(f"✓ Propriedades atualizadas: {node.title}")
             self.queue_draw()
         dialog.destroy()
 
@@ -1694,10 +1700,10 @@ class AssetsWindow(Gtk.ApplicationWindow):
                 if success:
                     self.current_file = filepath
                     self.set_title(f"Assets - {Path(filepath).name}")
-                    print(f"✓ Salvo como: {filepath}", file=sys.__stdout__)
+                    print(f"✓ Salvo como: {filepath}")
         except Exception as e:
             if "dismissed" not in str(e).lower():
-                print(f"❌ Erro ao salvar: {e}", file=sys.__stdout__)
+                print(f"❌ Erro ao salvar: {e}")
 
     def on_open_clicked(self, button):
         """Abre grafo de arquivo"""
@@ -1751,7 +1757,7 @@ class AssetsWindow(Gtk.ApplicationWindow):
                             )
                             connections.append(connection)
                         else:
-                            print(f"⚠️  Conexão inválida ignorada: {src_id} -> {dst_id}", file=sys.__stdout__)
+                            print(f"⚠️  Conexão inválida ignorada: {src_id} -> {dst_id}")
 
                     # Atualizar canvas
                     self.canvas.nodes = nodes
@@ -1760,9 +1766,9 @@ class AssetsWindow(Gtk.ApplicationWindow):
                     self.set_title(f"Assets - {Path(filepath).name}")
                     self.canvas.queue_draw()
 
-                    print(f"✓ Grafo carregado: {filepath}", file=sys.__stdout__)
-                    print(f"  - {len(nodes)} nós", file=sys.__stdout__)
-                    print(f"  - {len(connections)} conexões", file=sys.__stdout__)
+                    print(f"✓ Grafo carregado: {filepath}")
+                    print(f"  - {len(nodes)} nós")
+                    print(f"  - {len(connections)} conexões")
                 else:
                     print(f"❌ Falha ao carregar: {filepath}")
         except Exception as e:

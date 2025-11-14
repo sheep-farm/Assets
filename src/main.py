@@ -17,6 +17,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+# Configurar matplotlib para backend não-interativo ANTES de qualquer outro import
+import matplotlib
+matplotlib.use('Agg')
+
 import sys
 import gi
 import numpy
@@ -86,4 +90,3 @@ def main(version):
     """The application's entry point."""
     app = AssetsApplication()
     return app.run(sys.argv)
-

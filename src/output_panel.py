@@ -306,5 +306,4 @@ class DataTab(Gtk.Box):
         tab_label = Gtk.Label(label=title or "Data")
         self.sub.append_page(scrolled, tab_label)
         self.sub.set_current_page(self.sub.get_n_pages() - 1)
-        print(f"✓ Dados em aba: {title}")
-
+        print(f"✓ Dados em aba: {title}", file=sys.__stdout__)
