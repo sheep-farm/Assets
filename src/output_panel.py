@@ -7,6 +7,7 @@ O rótulo da sub-aba é o 'title' passado (inclua o nome do nó no title).
 
 from gi.repository import Gtk, Gdk, Pango
 import json
+import sys
 
 
 class OutputPanel(Gtk.Box):
@@ -84,7 +85,7 @@ class OutputPanel(Gtk.Box):
         self._update_tab_label(1, "📊", "Plots", 0)
         self._update_tab_label(2, "📋", "Tables", 0)
         self._update_tab_label(3, "📦", "Data", 0)
-        print("✓ Output panel cleared")
+        print("✓ Output panel cleared", file=sys.__stdout__)
 
     # ===== API pública (sem mudar assinaturas) =====
 
@@ -183,7 +184,7 @@ class PlotsTab(Gtk.Box):
         try:
             from matplotlib.backends.backend_gtk4agg import FigureCanvasGTK4Agg
         except ImportError:
-            print("❌ Matplotlib GTK4 backend não disponível. Instale: pip install matplotlib")
+            print("❌ Matplotlib GTK4 backend não disponível. Instale: pip install matplotlib", file=sys.__stdout__)
             return
 
         # Canvas do matplotlib direto na sub-aba
@@ -198,7 +199,7 @@ class PlotsTab(Gtk.Box):
         tab_label = Gtk.Label(label=title or "Plot")
         self.sub.append_page(scrolled, tab_label)
         self.sub.set_current_page(self.sub.get_n_pages() - 1)
-        print(f"✓ Plot em aba: {title}")
+        print(f"✓ Plot em aba: {title}", file=sys.__stdout__)
 
 
 # ===================== Tables =====================
@@ -253,7 +254,7 @@ class TablesTab(Gtk.Box):
         tab_label = Gtk.Label(label=title or "Table")
         self.sub.append_page(scrolled, tab_label)
         self.sub.set_current_page(self.sub.get_n_pages() - 1)
-        print(f"✓ Tabela em aba: {title}")
+        print(f"✓ Tabela em aba: {title}", file=sys.__stdout__)
 
 
 # ===================== Data (JSON) =====================

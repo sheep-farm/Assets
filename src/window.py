@@ -16,6 +16,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
+import sys
 
 from gi.repository import Adw
 from gi.repository import Gtk
@@ -24,15 +25,13 @@ from gi.repository import Gio
 
 import cairo
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .node import Node
 from .node_dialogs import CodeEditorDialog, RenameNodeDialog, NodePropertiesDialog, SaveToLibraryDialog
 from .graph_io import GraphSerializer, get_default_save_directory
 from .node_library import _get_library
 from .output_panel import OutputPanel
-from .output_panel import OutputPanel
-from .output_panel import OutputPanel
-
 
 class AssetsCanvas(Gtk.DrawingArea):
     """Canvas que desenha os nós"""
@@ -679,7 +678,7 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def execute_graph(self):
         """
-        Executa o grafo completo em ordem topológica.
+        Executa o grafo completo em ordem topológica com paralelização por níveis.
 
         Returns:
             bool: True se execução foi bem sucedida, False caso contrário
@@ -693,20 +692,26 @@ class AssetsCanvas(Gtk.DrawingArea):
         if hasattr(window, 'output_panel'):
             window.output_panel.clear_all()
 
-        # 1. Resolver ordem topológica
+        # 1. Verificar se grafo tem ciclos
         execution_order = self._topological_sort()
-
         if execution_order is None:
             print("❌ Erro: Grafo contém ciclos! Não é possível executar.")
             return False
 
-        print(f"📋 Ordem de execução: {[node.title for node in execution_order]}")
+        # 2. Agrupar nós por nível de execução
+        levels = self._group_by_execution_level()
+
+        print(f"📋 Níveis de execução: {len(levels)}")
+        for i, level in enumerate(levels):
+            print(f"  Nível {i}: {[node.title for node in level]}")
         print()
 
-        # 2. Dicionário para armazenar resultados de cada nó
+        # 3. Dicionário para armazenar resultados de cada nó (thread-safe)
+        import threading
         node_results = {}
+        results_lock = threading.Lock()
 
-        # 3. Capturar stdout
+        # 4. Capturar stdout
         import sys
         from io import StringIO
 
@@ -714,35 +719,49 @@ class AssetsCanvas(Gtk.DrawingArea):
         sys.stdout = captured_output = StringIO()
 
         try:
-            # 4. Executar cada nó em ordem
-            for i, node in enumerate(execution_order, 1):
-              #  print(f"[{i}/{len(execution_order)}] Executando: {node.title}")
+            # 5. Executar cada nível em paralelo
+            for level_idx, level in enumerate(levels):
+                print(f"⚡ Executando nível {level_idx} ({len(level)} nós em paralelo)...", file=sys.__stdout__)
 
-                try:
-                    # Coletar inputs deste nó
-                    inputs = self._collect_node_inputs(node, node_results)
+                # Função para executar um nó
+                def execute_node_wrapper(node):
+                    try:
+                        # Coletar inputs deste nó
+                        with results_lock:
+                            inputs = self._collect_node_inputs(node, node_results)
 
-                    # Executar código do nó
-                    outputs = self._execute_node_code(node, inputs)
+                        # Executar código do nó
+                        outputs = self._execute_node_code(node, inputs)
 
-                    # Armazenar resultados
-                    node_results[node] = outputs
+                        # Armazenar resultados (thread-safe)
+                        with results_lock:
+                            node_results[node] = outputs
 
-                    # Processar outputs especiais para o painel
-                    if hasattr(window, 'output_panel'):
-                        for output in outputs:
-                            self._process_special_output(output, node, window.output_panel)
+                        # Processar outputs especiais para o painel
+                        if hasattr(window, 'output_panel'):
+                            for output in outputs:
+                                self._process_special_output(output, node, window.output_panel)
 
-               #     print(f"  ✓ Saídas: {outputs}")
+                        return (node, outputs, None)  # (node, outputs, error)
 
-                except Exception as e:
-                    print(f"  ❌ Erro ao executar nó: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    except Exception as e:
+                        import traceback
+                        error_msg = f"❌ Erro ao executar {node.title}: {e}\n{traceback.format_exc()}"
+                        return (node, None, error_msg)
 
-                    # Restaurar stdout antes de retornar
-                    sys.stdout = old_stdout
-                    return False
+                # Executar nós do nível em paralelo
+                with ThreadPoolExecutor(max_workers=len(level)) as executor:
+                    futures = [executor.submit(execute_node_wrapper, node) for node in level]
+
+                    # Aguardar conclusão de todos os nós do nível
+                    for future in as_completed(futures):
+                        node, outputs, error = future.result()
+
+                        if error:
+                            # Restaurar stdout antes de retornar
+                            sys.stdout = old_stdout
+                            print(error)
+                            return False
 
             # Capturar texto do console
             console_text = captured_output.getvalue()
@@ -763,7 +782,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         except Exception as e:
             # Garantir que stdout seja restaurado mesmo com erro
             sys.stdout = old_stdout
-            print(f"❌ Erro na execução: {e}")
+            print(f"❌ Erro na execução: {e}", file=sys.__stdout__)
             import traceback
             traceback.print_exc()
             return False
@@ -830,6 +849,43 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return result
 
+    def _group_by_execution_level(self):
+        """
+        Agrupa nós por nível de execução (profundidade no DAG).
+        Nós no mesmo nível podem ser executados em paralelo.
+
+        Returns:
+            list[list[Node]]: Lista de níveis, cada nível contém lista de nós
+        """
+        # Calcular profundidade de cada nó (distância máxima da raiz)
+        depth = {node: 0 for node in self.nodes}
+
+        # Construir adjacências inversas (target -> sources)
+        predecessors = {node: [] for node in self.nodes}
+        for source_node, out_port, target_node, in_port in self.connections:
+            predecessors[target_node].append(source_node)
+
+        # Calcular profundidade de cada nó
+        changed = True
+        while changed:
+            changed = False
+            for node in self.nodes:
+                if predecessors[node]:
+                    max_pred_depth = max(depth[pred] for pred in predecessors[node])
+                    new_depth = max_pred_depth + 1
+                    if new_depth > depth[node]:
+                        depth[node] = new_depth
+                        changed = True
+
+        # Agrupar por profundidade
+        max_depth = max(depth.values()) if depth else 0
+        levels = [[] for _ in range(max_depth + 1)]
+
+        for node in self.nodes:
+            levels[depth[node]].append(node)
+
+        return levels
+
     def _collect_node_inputs(self, node, node_results):
         """
         Coleta os inputs de um nó a partir dos resultados dos nós anteriores.
@@ -872,7 +928,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             else:
                 # Múltiplas conexões: criar lista
                 inputs[port_idx] = connections
-                print(f"  📌 Porta in[{port_idx}] recebeu {len(connections)} conexões → lista")
+                print(f"  📌 Porta in[{port_idx}] recebeu {len(connections)} conexões → lista", file=sys.__stdout__)
 
         return tuple(inputs)
 
@@ -888,9 +944,15 @@ class AssetsCanvas(Gtk.DrawingArea):
             tuple: Tupla com outputs do nó
         """
         if not node.code or node.code.strip() == "":
-            print(f"  ⚠️  Nó sem código, retornando inputs como outputs")
+            print(f"  ⚠️  Nó sem código, retornando inputs como outputs", file=sys.__stdout__)
             return inputs
 
+        # Tentar recuperar do cache
+        result, from_cache = node.get_cached_result(inputs)
+        if from_cache:
+            return result
+
+        # Cache miss - executar código
         # Transformar o código em uma função
         # O código já está escrito como corpo de função (com return)
         code_as_function = "def __node_function(inputs):\n"
@@ -906,6 +968,9 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Garantir que retorno é tupla
         if not isinstance(result, tuple):
             result = (result,)
+
+        # Armazenar no cache
+        node.set_cache(inputs, result)
 
         return result
 
@@ -956,9 +1021,9 @@ class AssetsCanvas(Gtk.DrawingArea):
                 # Verificar se já existe essa conexão
                 if new_connection not in self.connections:
                     self.connections.append(new_connection)
-                    # print(f"✅ Conexão criada: {self.connection_start_node.title}.out[{self.connection_start_port}] → {node.title}.in[{port_index}]")
+                    # print(f"✅ Conexão criada: {self.connection_start_node.title}.out[{self.connection_start_port}] → {node.title}.in[{port_index}]", file=sys.__stdout__)
                 # else:
-                    # print(f"⚠️  Conexão já existe")
+                    # print(f"⚠️  Conexão já existe", file=sys.__stdout__)
 
                 # return
 
@@ -978,7 +1043,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             if node.contains_point(canvas_x, canvas_y):
                 self.dragging_node = node
                 self.dragging_node.start_drag(canvas_x, canvas_y)
-            #    print(f"Começou a arrastar: {node.title}")
+            #    print(f"Começou a arrastar: {node.title}", file=sys.__stdout__)
                 break
 
     def on_drag_update(self, gesture, offset_x, offset_y):
@@ -1009,7 +1074,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Quando termina de arrastar"""
         if self.dragging_node:
             self.dragging_node.stop_drag()
-            #print(f"  → Nova posição: ({self.dragging_node.x:.0f}, {self.dragging_node.y:.0f})")
+            #print(f"  → Nova posição: ({self.dragging_node.x:.0f}, {self.dragging_node.y:.0f})", file=sys.__stdout__)
             self.dragging_node = None
 
     def on_mouse_motion(self, controller, x, y):
@@ -1189,7 +1254,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Guardar nó atual para as actions
         self.context_menu_node = node
 
-        print(f"✓ Popover configurado em ({x:.0f}, {y:.0f})")
+        print(f"✓ Popover configurado em ({x:.0f}, {y:.0f})", file=sys.__stdout__)
 
         # Mostrar menu
         popover.popup()
@@ -1212,7 +1277,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         if response == Gtk.ResponseType.OK:
             new_code = dialog.get_code()
             node.code = new_code
-            print(f"✓ Código atualizado: {node.title}")
+            print(f"✓ Código atualizado: {node.title}", file=sys.__stdout__)
             self.queue_draw()
         dialog.destroy()
 
@@ -1234,7 +1299,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             new_name = dialog.get_name()
             if new_name:
                 node.title = new_name
-                print(f"✓ Nó renomeado: {new_name}")
+                print(f"✓ Nó renomeado: {new_name}", file=sys.__stdout__)
                 self.queue_draw()
         dialog.destroy()
 
@@ -1266,7 +1331,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             node.body_height = max_ports * node.HEIGHT_PORT + node.PADDING * 2
             node.total_height = node.HEIGHT_HEADER + node.body_height
 
-            print(f"✓ Propriedades atualizadas: {node.title}")
+            print(f"✓ Propriedades atualizadas: {node.title}", file=sys.__stdout__)
             self.queue_draw()
         dialog.destroy()
 
@@ -1629,10 +1694,10 @@ class AssetsWindow(Gtk.ApplicationWindow):
                 if success:
                     self.current_file = filepath
                     self.set_title(f"Assets - {Path(filepath).name}")
-                    print(f"✓ Salvo como: {filepath}")
+                    print(f"✓ Salvo como: {filepath}", file=sys.__stdout__)
         except Exception as e:
             if "dismissed" not in str(e).lower():
-                print(f"❌ Erro ao salvar: {e}")
+                print(f"❌ Erro ao salvar: {e}", file=sys.__stdout__)
 
     def on_open_clicked(self, button):
         """Abre grafo de arquivo"""
@@ -1686,7 +1751,7 @@ class AssetsWindow(Gtk.ApplicationWindow):
                             )
                             connections.append(connection)
                         else:
-                            print(f"⚠️  Conexão inválida ignorada: {src_id} -> {dst_id}")
+                            print(f"⚠️  Conexão inválida ignorada: {src_id} -> {dst_id}", file=sys.__stdout__)
 
                     # Atualizar canvas
                     self.canvas.nodes = nodes
@@ -1695,9 +1760,9 @@ class AssetsWindow(Gtk.ApplicationWindow):
                     self.set_title(f"Assets - {Path(filepath).name}")
                     self.canvas.queue_draw()
 
-                    print(f"✓ Grafo carregado: {filepath}")
-                    print(f"  - {len(nodes)} nós")
-                    print(f"  - {len(connections)} conexões")
+                    print(f"✓ Grafo carregado: {filepath}", file=sys.__stdout__)
+                    print(f"  - {len(nodes)} nós", file=sys.__stdout__)
+                    print(f"  - {len(connections)} conexões", file=sys.__stdout__)
                 else:
                     print(f"❌ Falha ao carregar: {filepath}")
         except Exception as e:

@@ -65,7 +65,27 @@ class Node:
         self.drag_offset_y = 0
 
         # Código Python do nó
-        self.code = ""  # Será preenchido por templates ou editor
+        self._code = ""  # Armazenamento interno
+
+        # Sistema de cache (última execução)
+        self._last_inputs = None      # Hash das últimas entradas
+        self._last_outputs = None     # Resultados da última execução
+        self._cache_valid = False     # Flag de validade do cache
+
+    @property
+    def code(self):
+        """Retorna o código Python do nó"""
+        return self._code
+
+    @code.setter
+    def code(self, value):
+        """
+        Define o código Python do nó.
+        Invalida o cache quando o código é modificado.
+        """
+        if self._code != value:
+            self._code = value
+            self.invalidate_cache()
 
     def draw(self, context):
         """
@@ -312,6 +332,74 @@ class Node:
             return self.output_ports[index]
         return None
 
+    def _hash_inputs(self, inputs):
+        """
+        Gera hash das entradas para comparação de cache.
+
+        Args:
+            inputs: Tupla com valores de entrada
+
+        Returns:
+            int: Hash das entradas
+        """
+        try:
+            # Converte para string e gera hash
+            # Usa repr() para capturar tipos diferentes
+            input_str = repr(inputs)
+            return hash(input_str)
+        except Exception:
+            # Se não conseguir gerar hash, retorna None (força recálculo)
+            return None
+
+    def get_cached_result(self, inputs):
+        """
+        Tenta recuperar resultado do cache.
+
+        Args:
+            inputs: Tupla com valores de entrada
+
+        Returns:
+            tuple: (resultado, from_cache)
+                - resultado: Resultado em cache ou None se inválido
+                - from_cache: bool indicando se veio do cache
+        """
+        if not self._cache_valid:
+            return None, False
+
+        # Verificar se entradas são iguais
+        current_hash = self._hash_inputs(inputs)
+        if current_hash is None or current_hash != self._last_inputs:
+            return None, False
+
+        # Usar stdout original para não ser capturado
+        import sys
+        print(f"✓ Cache hit: {self.title}", file=sys.__stdout__)
+        return self._last_outputs, True
+
+    def set_cache(self, inputs, outputs):
+        """
+        Armazena resultado no cache.
+
+        Args:
+            inputs: Tupla com valores de entrada
+            outputs: Resultados da execução
+        """
+        self._last_inputs = self._hash_inputs(inputs)
+        self._last_outputs = outputs
+        self._cache_valid = True
+        # Usar stdout original para não ser capturado
+        import sys
+        print(f"⚙️ Executado e cacheado: {self.title}", file=sys.__stdout__)
+
+    def invalidate_cache(self):
+        """
+        Invalida o cache, forçando recálculo na próxima execução.
+        Útil quando o código do nó é modificado.
+        """
+        self._cache_valid = False
+        self._last_inputs = None
+        self._last_outputs = None
+
     def to_dict(self):
         """
         Serializa o nó para um dicionário (para salvar em arquivo).
@@ -326,7 +414,7 @@ class Node:
             "title": self.title,
             "num_inputs": self.num_inputs,
             "num_outputs": self.num_outputs,
-            "code": self.code
+            "code": self._code  # Usa _code diretamente
         }
     
     @classmethod
