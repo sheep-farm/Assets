@@ -686,10 +686,11 @@ class AssetsCanvas(Gtk.DrawingArea):
             print("⚠️  Nenhum nó para executar")
             return False
 
-        # Limpar outputs anteriores
+        # Limpar outputs anteriores (via idle_add para thread-safety)
+        from gi.repository import GLib
         window = self.get_root()
         if hasattr(window, 'output_panel'):
-            window.output_panel.clear_all()
+            GLib.idle_add(window.output_panel.clear_all)
 
         # 1. Verificar se grafo tem ciclos
         execution_order = self._topological_sort()
@@ -737,11 +738,7 @@ class AssetsCanvas(Gtk.DrawingArea):
                         with results_lock:
                             node_results[node] = outputs
 
-                        # Processar outputs especiais para o painel
-                        if hasattr(window, 'output_panel'):
-                            for output in outputs:
-                                self._process_special_output(output, node, window.output_panel)
-
+                        # RETORNAR outputs para processar na main thread
                         return (node, outputs, None)  # (node, outputs, error)
 
                     except Exception as e:
@@ -750,6 +747,7 @@ class AssetsCanvas(Gtk.DrawingArea):
                         return (node, None, error_msg)
 
                 # Executar nós do nível em paralelo
+                level_results = []
                 with ThreadPoolExecutor(max_workers=len(level)) as executor:
                     futures = [executor.submit(execute_node_wrapper, node) for node in level]
 
@@ -763,15 +761,24 @@ class AssetsCanvas(Gtk.DrawingArea):
                             print(error)
                             return False
 
+                        # Guardar para processar depois
+                        level_results.append((node, outputs))
+
+                # PROCESSAR outputs especiais na MAIN THREAD (fora do executor)
+                if hasattr(window, 'output_panel'):
+                    for node, outputs in level_results:
+                        for output in outputs:
+                            self._process_special_output(output, node, window.output_panel)
+
             # Capturar texto do console
             console_text = captured_output.getvalue()
 
             # Restaurar stdout
             sys.stdout = old_stdout
 
-            # Adicionar output do console ao painel
+            # Adicionar output do console ao painel (via idle_add para thread-safety)
             if console_text and hasattr(window, 'output_panel'):
-                window.output_panel.console_tab.add_text(console_text)
+                GLib.idle_add(window.output_panel.console_tab.add_text, console_text)
 
             # Também printar no stdout real
             if console_text:
@@ -790,7 +797,7 @@ class AssetsCanvas(Gtk.DrawingArea):
     def _process_special_output(self, output, node, output_panel):
         """
         Processa outputs especiais e envia para o painel apropriado.
-        Usa GLib.idle_add() para garantir thread-safety ao criar widgets.
+        Usa GLib.idle_add() quando chamado de thread de background.
 
         Args:
             output: Output do nó
@@ -803,19 +810,16 @@ class AssetsCanvas(Gtk.DrawingArea):
         if isinstance(output, dict):
             # Plot matplotlib
             if "_plot" in output:
-                # Agendar para main thread
                 GLib.idle_add(output_panel.add_plot, output["_plot"], f"Plot from: {node.title}")
                 return
 
             # Tabela (DataFrame)
             if "_table" in output:
-                # Agendar para main thread
                 GLib.idle_add(output_panel.add_table, output["_table"], f"Table from: {node.title}")
                 return
 
             # Dados estruturados
             if "_data" in output:
-                # Agendar para main thread
                 GLib.idle_add(output_panel.add_data, output["_data"], f"Data from: {node.title}")
                 return
 
@@ -1620,22 +1624,35 @@ class AssetsWindow(Gtk.ApplicationWindow):
         print("✓ Biblioteca atualizada")
 
     def on_run_clicked(self, button):
-        """Quando clica no botão Run - executa o grafo"""
-#        print("\n" + "=" * 60)
-#        print("▶️  EXECUTANDO GRAFO")
-#        print("=" * 60)
+        """Quando clica no botão Run - executa o grafo em background"""
+        import threading
 
-        # Executar o grafo
-        success = self.canvas.execute_graph()
+        # Desabilitar botão durante execução
+        button.set_sensitive(False)
 
-        if success:
-            print("=" * 60)
-            print("✅ EXECUÇÃO CONCLUÍDA COM SUCESSO")
-            print("=" * 60 + "\n")
-        else:
-            print("=" * 60)
-            print("❌ EXECUÇÃO FALHOU")
-            print("=" * 60 + "\n")
+        def run_in_background():
+            # Executar o grafo
+            success = self.canvas.execute_graph()
+
+            # Re-habilitar botão na main thread
+            from gi.repository import GLib
+            def finish():
+                button.set_sensitive(True)
+                if success:
+                    print("=" * 60)
+                    print("✅ EXECUÇÃO CONCLUÍDA COM SUCESSO")
+                    print("=" * 60 + "\n")
+                else:
+                    print("=" * 60)
+                    print("❌ EXECUÇÃO FALHOU")
+                    print("=" * 60 + "\n")
+                return False  # Remove from idle queue
+
+            GLib.idle_add(finish)
+
+        # Iniciar thread
+        thread = threading.Thread(target=run_in_background, daemon=True)
+        thread.start()
 
     def on_new_clicked(self, button):
         """Cria novo grafo"""
