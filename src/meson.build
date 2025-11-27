@@ -41,6 +41,7 @@ assets_sources = [
   'node_dialogs.py',
   'graph_io.py',
   'output_panel.py',
+  'undo_redo.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)

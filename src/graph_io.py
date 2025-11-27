@@ -13,15 +13,16 @@ class GraphSerializer:
     VERSION = "1.0"
     
     @staticmethod
-    def save_graph(nodes, connections, filepath):
+    def save_graph(nodes, connections, filepath, view_state=None):
         """
         Salva grafo em arquivo JSON.
-        
+
         Args:
             nodes: Lista de objetos Node
             connections: Lista de tuplas (node_origem, porta_saida, node_destino, porta_entrada)
             filepath: Caminho do arquivo
-            
+            view_state: Dicionário com estado visual (zoom, scroll position, etc.)
+
         Returns:
             bool: True se salvou com sucesso
         """
@@ -49,6 +50,10 @@ class GraphSerializer:
                 "nodes": nodes_data,
                 "connections": connections_data
             }
+
+            # Adicionar estado visual se fornecido
+            if view_state:
+                graph_data["view_state"] = view_state
             
             # Salvar em arquivo
             with open(filepath, 'w', encoding='utf-8') as f:

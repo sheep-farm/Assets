@@ -12,6 +12,7 @@ from .node_dialogs import CodeEditorDialog, RenameNodeDialog, NodePropertiesDial
 from .graph_io import GraphSerializer, get_default_save_directory
 from .node_library import _get_library
 from .output_panel import OutputPanel
+from .undo_redo import UndoRedoManager
 
 class AssetsCanvas(Gtk.DrawingArea):
     """Canvas que desenha os nós"""
@@ -65,6 +66,10 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.action_group = Gio.SimpleActionGroup()
         self.insert_action_group("canvas", self.action_group)
 
+        # Inicializar sistema de Undo/Redo
+        self.undo_manager = UndoRedoManager(self)
+        self._recording_undo = True  # Flag para controlar gravação
+
         # print(f"✓ Canvas criado com {len(self.nodes)} nós")
         # print(f"✓ {len(self.connections)} conexões criadas")
         # print("  - Clique para selecionar")
@@ -80,10 +85,10 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Atualiza o tamanho do canvas baseado nos nós e zoom"""
         if not self.nodes:
             # Tamanho padrão se não há nós
-            self.set_size_request(int(4000 * self.zoom_level), int(4000 * self.zoom_level))
+            self.set_size_request(int(2000 * self.zoom_level), int(2000 * self.zoom_level))
             return
 
-        # Encontrar limites dos nós
+        # Encontrar limites dos nós (considerando coordenadas absolutas)
         min_x = min(node.x for node in self.nodes)
         min_y = min(node.y for node in self.nodes)
         max_x = max(node.x + node.WIDTH for node in self.nodes)
@@ -91,14 +96,18 @@ class AssetsCanvas(Gtk.DrawingArea):
                    max(node.num_inputs, node.num_outputs) * node.HEIGHT_PORT + node.PADDING
                    for node in self.nodes)
 
-        # Adicionar margem
-        margin = 500
-        width = int((max_x - min_x + margin * 2) * self.zoom_level)
-        height = int((max_y - min_y + margin * 2) * self.zoom_level)
+        # Adicionar margem proporcional
+        margin = 300
 
-        # Garantir tamanho mínimo
-        width = max(width, int(2000 * self.zoom_level))
-        height = max(height, int(2000 * self.zoom_level))
+        # Calcular tamanho total baseado no espaço real ocupado
+        # Considerando desde min até max (não assumir 0,0)
+        width = int((max_x - min(0, min_x) + margin) * self.zoom_level)
+        height = int((max_y - min(0, min_y) + margin) * self.zoom_level)
+
+        # Garantir tamanho mínimo razoável
+        min_size = 1000
+        width = max(width, int(min_size * self.zoom_level))
+        height = max(height, int(min_size * self.zoom_level))
 
         self.set_size_request(width, height)
 
@@ -528,6 +537,17 @@ class AssetsCanvas(Gtk.DrawingArea):
             self._duplicate_focused_node()
             return True
 
+        # Ctrl+Z - Undo
+        if ctrl_pressed and keyval == Gdk.KEY_z:
+            self.undo_manager.undo()
+            return True
+
+        # Ctrl+Y ou Ctrl+Shift+Z - Redo
+        if ctrl_pressed and (keyval == Gdk.KEY_y or
+                            (keyval == Gdk.KEY_z and state & Gdk.ModifierType.SHIFT_MASK)):
+            self.undo_manager.redo()
+            return True
+
         # E - Editar código do nó focado
         if keyval == Gdk.KEY_e and not ctrl_pressed:
             if 0 <= self.focused_node_index < len(self.nodes):
@@ -643,6 +663,10 @@ class AssetsCanvas(Gtk.DrawingArea):
     def _delete_focused_node(self):
         """Remove o nó que está com foco (Delete)"""
         if 0 <= self.focused_node_index < len(self.nodes):
+            # Registrar estado antes da mudança
+            if self._recording_undo:
+                old_state = self.undo_manager.capture_state()
+
             node_to_delete = self.nodes[self.focused_node_index]
 
             # Remover conexões associadas ao nó
@@ -659,6 +683,11 @@ class AssetsCanvas(Gtk.DrawingArea):
             if self.focused_node_index >= len(self.nodes):
                 self.focused_node_index = len(self.nodes) - 1
 
+            # Registrar ação no undo
+            if self._recording_undo:
+                self.undo_manager.record_action(old_state)
+
+            self._update_canvas_size()
             self.queue_draw()
 
     def _delete_selected_connection(self):
@@ -1127,6 +1156,9 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def on_drag_begin(self, gesture, start_x, start_y):
         """Quando começa a arrastar"""
+        # Capturar estado para undo (só se arrastar nós)
+        if self._recording_undo:
+            self._drag_old_state = self.undo_manager.capture_state()
         canvas_x, canvas_y = self._screen_to_canvas(start_x, start_y)
 
         # Verificar modificadores
@@ -1192,6 +1224,8 @@ class AssetsCanvas(Gtk.DrawingArea):
                 # Mover apenas o nó arrastado
                 self.dragging_node.update_drag(canvas_x, canvas_y)
 
+            # Atualizar tamanho do canvas durante o arrasto
+            self._update_canvas_size()
             self.queue_draw()
 
     def on_drag_end(self, gesture, offset_x, offset_y):
@@ -1210,6 +1244,13 @@ class AssetsCanvas(Gtk.DrawingArea):
                 if node.selected:
                     node.stop_drag()
             self.dragging_node = None
+
+            # Registrar movimento no undo
+            if self._recording_undo and hasattr(self, '_drag_old_state'):
+                self.undo_manager.record_action(self._drag_old_state)
+                delattr(self, '_drag_old_state')
+
+            self._update_canvas_size()
             self.queue_draw()
 
     def on_pan_begin(self, gesture, start_x, start_y):
@@ -1582,8 +1623,19 @@ class AssetsCanvas(Gtk.DrawingArea):
             return
 
         node = self.context_menu_node
-        self._remove_node(node)
+
+        # Remover conexões associadas
+        self.connections = [
+            conn for conn in self.connections
+            if conn[0] != node and conn[2] != node
+        ]
+
+        # Remover o nó
+        if node in self.nodes:
+            self.nodes.remove(node)
+
         self.context_menu_node = None
+        self._update_canvas_size()
         self.queue_draw()
 
     def save_node_to_library(self):

@@ -264,8 +264,30 @@ class AssetsWindow(Adw.ApplicationWindow):
                     for node in nodes:
                         node._calculate_port_positions()
 
-                    # Update canvas size based on nodes and zoom
-                    self.canvas._update_canvas_size()
+                    # Restaurar estado visual se disponível
+                    view_state = graph_data.get("view_state")
+                    if view_state:
+                        # Restaurar zoom
+                        self.canvas.zoom_level = view_state.get("zoom", 1.0)
+
+                        # Update canvas size based on nodes and zoom
+                        self.canvas._update_canvas_size()
+
+                        # Restaurar posição do scroll após um pequeno delay
+                        # (necessário para que os adjustments sejam configurados)
+                        from gi.repository import GLib
+                        def restore_scroll():
+                            hadj = self.scrolled_window.get_hadjustment()
+                            vadj = self.scrolled_window.get_vadjustment()
+                            if hadj:
+                                hadj.set_value(view_state.get("scroll_x", 0))
+                            if vadj:
+                                vadj.set_value(view_state.get("scroll_y", 0))
+                            return False
+                        GLib.timeout_add(100, restore_scroll)
+                    else:
+                        # Update canvas size based on nodes and zoom
+                        self.canvas._update_canvas_size()
 
                     self.canvas.queue_draw()
 
@@ -327,10 +349,21 @@ class AssetsWindow(Adw.ApplicationWindow):
         """Save graph to file"""
         from .graph_io import GraphSerializer
 
+        # Capturar estado visual atual
+        hadj = self.scrolled_window.get_hadjustment()
+        vadj = self.scrolled_window.get_vadjustment()
+
+        view_state = {
+            "zoom": self.canvas.zoom_level,
+            "scroll_x": hadj.get_value() if hadj else 0,
+            "scroll_y": vadj.get_value() if vadj else 0
+        }
+
         success = GraphSerializer.save_graph(
             self.canvas.nodes,
             self.canvas.connections,
-            filepath
+            filepath,
+            view_state
         )
 
         if success:
