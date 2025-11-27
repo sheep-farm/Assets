@@ -42,6 +42,7 @@ assets_sources = [
   'graph_io.py',
   'output_panel.py',
   'undo_redo.py',
+  'project_tab.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)

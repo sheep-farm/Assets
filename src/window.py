@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .canvas import AssetsCanvas
 from .output_panel import OutputPanel
+from .project_tab import ProjectTab
 
 
 @Gtk.Template(resource_path='/com/github/sheep/farm/assets/window.ui')
@@ -65,32 +66,31 @@ class AssetsWindow(Adw.ApplicationWindow):
         self.run_button.connect("clicked", self._on_run_graph)
         self.result_toggle.connect("toggled", self._on_result_toggle)
 
-        # Estado do arquivo
-        self.current_file = None
-
         # Popular lista inicial de nodes
         self._populate_node_list()
 
-        # Criar canvas
-        self.canvas = AssetsCanvas()
+        # Criar TabView para múltiplos projetos
+        self.tab_view = Adw.TabView()
+        self.tab_view.set_vexpand(True)
+        self.tab_view.set_hexpand(True)
 
-        # Colocar canvas dentro de ScrolledWindow
-        self.scrolled_window = Gtk.ScrolledWindow()
-        self.scrolled_window.set_vexpand(True)
-        self.scrolled_window.set_hexpand(True)
-        self.scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        self.scrolled_window.set_child(self.canvas)
+        # Criar TabBar
+        self.tab_bar = Adw.TabBar()
+        self.tab_bar.set_view(self.tab_view)
+        self.tab_bar.set_autohide(False)  # Sempre mostrar a barra
 
-        self.canvas_box.append(self.scrolled_window)
+        # Adicionar TabBar e TabView ao canvas_box
+        self.canvas_box.append(self.tab_bar)
+        self.canvas_box.append(self.tab_view)
 
-        # Criar e adicionar output panel
-        self.output_panel = OutputPanel()
-        self.output_panel.set_vexpand(True)
-        self.output_panel.set_hexpand(True)
-        self.result_box.append(self.output_panel)
+        # Conectar sinal de mudança de página
+        self.tab_view.connect("notify::selected-page", self._on_tab_changed)
 
-        # Setup canvas actions (menu de contexto)
-        self._setup_canvas_actions()
+        # Criar primeira aba
+        self._create_new_tab()
+
+        # Inicializar referências para a primeira aba
+        self._on_tab_changed(self.tab_view, None)
 
         # Setup window actions
         self._create_actions()
@@ -101,66 +101,110 @@ class AssetsWindow(Adw.ApplicationWindow):
         # Connect close handler to cleanup
         self.connect("close-request", self._on_close_request)
 
-    def _setup_canvas_actions(self):
-        """Setup actions for canvas context menu"""
+    def _create_new_tab(self, title=None, file_path=None):
+        """Cria uma nova aba de projeto"""
+        # Criar projeto
+        project = ProjectTab()
+
+        if file_path:
+            project.current_file = file_path
+
+        # Criar página na TabView
+        page = self.tab_view.append(project.get_widget())
+
+        # Definir título da aba
+        tab_title = title if title else project.get_title()
+        page.set_title(tab_title)
+        page.set_tooltip(project.get_tooltip())
+
+        # Guardar referência ao projeto na página
+        page.project = project
+
+        # Conectar canvas actions para este projeto
+        self._setup_canvas_actions_for_project(project)
+
+        return project
+
+    def _on_tab_changed(self, tab_view, param):
+        """Chamado quando a aba ativa muda"""
+        page = tab_view.get_selected_page()
+        if page and hasattr(page, 'project'):
+            # Atualizar referências de compatibilidade
+            self.canvas = page.project.canvas
+            self.output_panel = page.project.output_panel
+            self.scrolled_window = page.project.scrolled_window
+            self.current_file = page.project.current_file
+
+    @property
+    def current_tab(self):
+        """Retorna a aba/projeto atual"""
+        page = self.tab_view.get_selected_page()
+        if page and hasattr(page, 'project'):
+            return page.project
+        return None
+
+    def _setup_canvas_actions_for_project(self, project):
+        """Setup actions for canvas context menu for a specific project"""
+        canvas = project.canvas
+
         # Edit Code action
         edit_action = Gio.SimpleAction.new("edit-code", None)
-        edit_action.connect("activate", lambda a, p: self.canvas.edit_node_code())
-        self.canvas.action_group.add_action(edit_action)
+        edit_action.connect("activate", lambda a, p: canvas.edit_node_code())
+        canvas.action_group.add_action(edit_action)
 
         # Rename action
         rename_action = Gio.SimpleAction.new("rename", None)
-        rename_action.connect("activate", lambda a, p: self.canvas.rename_node())
-        self.canvas.action_group.add_action(rename_action)
+        rename_action.connect("activate", lambda a, p: canvas.rename_node())
+        canvas.action_group.add_action(rename_action)
 
         # Properties action
         props_action = Gio.SimpleAction.new("properties", None)
-        props_action.connect("activate", lambda a, p: self.canvas.show_node_properties())
-        self.canvas.action_group.add_action(props_action)
+        props_action.connect("activate", lambda a, p: canvas.show_node_properties())
+        canvas.action_group.add_action(props_action)
 
         # Save to Library action
         save_lib_action = Gio.SimpleAction.new("save-to-library", None)
-        save_lib_action.connect("activate", lambda a, p: self.canvas.save_node_to_library())
-        self.canvas.action_group.add_action(save_lib_action)
+        save_lib_action.connect("activate", lambda a, p: canvas.save_node_to_library())
+        canvas.action_group.add_action(save_lib_action)
 
         # Delete action
         delete_action = Gio.SimpleAction.new("delete", None)
-        delete_action.connect("activate", lambda a, p: self.canvas.delete_context_node())
-        self.canvas.action_group.add_action(delete_action)
+        delete_action.connect("activate", lambda a, p: canvas.delete_context_node())
+        canvas.action_group.add_action(delete_action)
 
         # Alignment actions
         align_left = Gio.SimpleAction.new("align-left", None)
-        align_left.connect("activate", lambda a, p: self.canvas.align_selected_nodes("left"))
-        self.canvas.action_group.add_action(align_left)
+        align_left.connect("activate", lambda a, p: canvas.align_selected_nodes("left"))
+        canvas.action_group.add_action(align_left)
 
         align_center_h = Gio.SimpleAction.new("align-center-h", None)
-        align_center_h.connect("activate", lambda a, p: self.canvas.align_selected_nodes("center-h"))
-        self.canvas.action_group.add_action(align_center_h)
+        align_center_h.connect("activate", lambda a, p: canvas.align_selected_nodes("center-h"))
+        canvas.action_group.add_action(align_center_h)
 
         align_right = Gio.SimpleAction.new("align-right", None)
-        align_right.connect("activate", lambda a, p: self.canvas.align_selected_nodes("right"))
-        self.canvas.action_group.add_action(align_right)
+        align_right.connect("activate", lambda a, p: canvas.align_selected_nodes("right"))
+        canvas.action_group.add_action(align_right)
 
         align_top = Gio.SimpleAction.new("align-top", None)
-        align_top.connect("activate", lambda a, p: self.canvas.align_selected_nodes("top"))
-        self.canvas.action_group.add_action(align_top)
+        align_top.connect("activate", lambda a, p: canvas.align_selected_nodes("top"))
+        canvas.action_group.add_action(align_top)
 
         align_center_v = Gio.SimpleAction.new("align-center-v", None)
-        align_center_v.connect("activate", lambda a, p: self.canvas.align_selected_nodes("center-v"))
-        self.canvas.action_group.add_action(align_center_v)
+        align_center_v.connect("activate", lambda a, p: canvas.align_selected_nodes("center-v"))
+        canvas.action_group.add_action(align_center_v)
 
         align_bottom = Gio.SimpleAction.new("align-bottom", None)
-        align_bottom.connect("activate", lambda a, p: self.canvas.align_selected_nodes("bottom"))
-        self.canvas.action_group.add_action(align_bottom)
+        align_bottom.connect("activate", lambda a, p: canvas.align_selected_nodes("bottom"))
+        canvas.action_group.add_action(align_bottom)
 
         # Distribution actions
         distribute_h = Gio.SimpleAction.new("distribute-h", None)
-        distribute_h.connect("activate", lambda a, p: self.canvas.distribute_selected_nodes("horizontal"))
-        self.canvas.action_group.add_action(distribute_h)
+        distribute_h.connect("activate", lambda a, p: canvas.distribute_selected_nodes("horizontal"))
+        canvas.action_group.add_action(distribute_h)
 
         distribute_v = Gio.SimpleAction.new("distribute-v", None)
-        distribute_v.connect("activate", lambda a, p: self.canvas.distribute_selected_nodes("vertical"))
-        self.canvas.action_group.add_action(distribute_v)
+        distribute_v.connect("activate", lambda a, p: canvas.distribute_selected_nodes("vertical"))
+        canvas.action_group.add_action(distribute_v)
 
         # Connect canvas signal to update node list when library changes
         # self.canvas.connect("node-saved-to-library", lambda c: self._populate_node_list())
@@ -189,13 +233,9 @@ class AssetsWindow(Adw.ApplicationWindow):
 
 
     def on_new(self, action, param):
-        """Handle New action"""
-        # TODO: Ask if user wants to save changes before clearing
-        self.canvas.nodes.clear()
-        self.canvas.connections.clear()
-        self.current_file = None
-        self.canvas.queue_draw()
-        print("✓ New graph created")
+        """Handle New action - creates a new tab"""
+        self._create_new_tab()
+        print("✓ New graph created in new tab")
 
     def on_open(self, action, param):
         """Handle Open action"""
