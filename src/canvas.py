@@ -1353,6 +1353,12 @@ class AssetsCanvas(Gtk.DrawingArea):
             node: Nó clicado
             x, y: Posição do clique (coordenadas da tela/widget)
         """
+        # Verificar se há múltiplos nós selecionados
+        selected_nodes = [n for n in self.nodes if n.selected]
+        if len(selected_nodes) > 1:
+            self._show_multi_selection_menu(x, y)
+            return
+
         print(f"📝 Criando menu de contexto para: {node.title}")
 
         menu = Gio.Menu()
@@ -1388,6 +1394,40 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Mostrar menu
         popover.popup()
         print(f"✓ popup() chamado")
+
+    def _show_multi_selection_menu(self, x, y):
+        """Mostra menu de contexto para múltipla seleção"""
+        menu = Gio.Menu()
+
+        # Seção de alinhamento
+        align_section = Gio.Menu()
+        align_section.append("Align Left", "canvas.align-left")
+        align_section.append("Align Center H", "canvas.align-center-h")
+        align_section.append("Align Right", "canvas.align-right")
+        align_section.append("Align Top", "canvas.align-top")
+        align_section.append("Align Center V", "canvas.align-center-v")
+        align_section.append("Align Bottom", "canvas.align-bottom")
+        menu.append_section("Alignment", align_section)
+
+        # Seção de distribuição
+        distribute_section = Gio.Menu()
+        distribute_section.append("Distribute Horizontally", "canvas.distribute-h")
+        distribute_section.append("Distribute Vertically", "canvas.distribute-v")
+        menu.append_section("Distribution", distribute_section)
+
+        # Criar popover
+        popover = Gtk.PopoverMenu()
+        popover.set_menu_model(menu)
+        popover.set_parent(self)
+
+        rect = Gdk.Rectangle()
+        rect.x = int(x)
+        rect.y = int(y)
+        rect.width = 1
+        rect.height = 1
+        popover.set_pointing_to(rect)
+
+        popover.popup()
 
     def edit_node_code(self):
         """Abre dialog para editar código do nó"""
@@ -1506,3 +1546,84 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.queue_draw()
 
 
+
+    def align_selected_nodes(self, mode):
+        """Alinha nós selecionados"""
+        selected = [n for n in self.nodes if n.selected]
+        if len(selected) < 2:
+            return
+
+        if mode == "left":
+            # Alinhar à esquerda (menor x)
+            min_x = min(n.x for n in selected)
+            for node in selected:
+                node.x = min_x
+        elif mode == "center-h":
+            # Alinhar ao centro horizontal
+            avg_center_x = sum(n.x + n.WIDTH / 2 for n in selected) / len(selected)
+            for node in selected:
+                node.x = avg_center_x - node.WIDTH / 2
+        elif mode == "right":
+            # Alinhar à direita (maior x + width)
+            max_right = max(n.x + n.WIDTH for n in selected)
+            for node in selected:
+                node.x = max_right - node.WIDTH
+        elif mode == "top":
+            # Alinhar ao topo (menor y)
+            min_y = min(n.y for n in selected)
+            for node in selected:
+                node.y = min_y
+        elif mode == "center-v":
+            # Alinhar ao centro vertical
+            avg_center_y = sum(n.y + n.total_height / 2 for n in selected) / len(selected)
+            for node in selected:
+                node.y = avg_center_y - node.total_height / 2
+        elif mode == "bottom":
+            # Alinhar à base (maior y + height)
+            max_bottom = max(n.y + n.total_height for n in selected)
+            for node in selected:
+                node.y = max_bottom - node.total_height
+
+        self.queue_draw()
+
+    def distribute_selected_nodes(self, direction):
+        """Distribui nós selecionados com espaçamento uniforme"""
+        selected = [n for n in self.nodes if n.selected]
+        if len(selected) < 3:
+            return
+
+        if direction == "horizontal":
+            # Ordenar por posição X
+            selected_sorted = sorted(selected, key=lambda n: n.x)
+            
+            # Calcular espaço total e espaçamento
+            leftmost = selected_sorted[0].x
+            rightmost = selected_sorted[-1].x + selected_sorted[-1].WIDTH
+            total_width = sum(n.WIDTH for n in selected_sorted)
+            available_space = rightmost - leftmost - total_width
+            gap = available_space / (len(selected_sorted) - 1)
+            
+            # Distribuir
+            current_x = leftmost
+            for node in selected_sorted:
+                node.x = current_x
+                current_x += node.WIDTH + gap
+                
+        elif direction == "vertical":
+            # Ordenar por posição Y
+            selected_sorted = sorted(selected, key=lambda n: n.y)
+            
+            # Calcular espaço total e espaçamento
+            topmost = selected_sorted[0].y
+            bottommost = selected_sorted[-1].y + selected_sorted[-1].total_height
+            total_height = sum(n.total_height for n in selected_sorted)
+            available_space = bottommost - topmost - total_height
+            gap = available_space / (len(selected_sorted) - 1)
+            
+            # Distribuir
+            current_y = topmost
+            for node in selected_sorted:
+                node.y = current_y
+                current_y += node.total_height + gap
+
+        self.queue_draw()

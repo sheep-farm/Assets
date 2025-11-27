@@ -122,6 +122,40 @@ class AssetsWindow(Adw.ApplicationWindow):
         delete_action.connect("activate", lambda a, p: self.canvas.delete_context_node())
         self.canvas.action_group.add_action(delete_action)
 
+        # Alignment actions
+        align_left = Gio.SimpleAction.new("align-left", None)
+        align_left.connect("activate", lambda a, p: self.canvas.align_selected_nodes("left"))
+        self.canvas.action_group.add_action(align_left)
+
+        align_center_h = Gio.SimpleAction.new("align-center-h", None)
+        align_center_h.connect("activate", lambda a, p: self.canvas.align_selected_nodes("center-h"))
+        self.canvas.action_group.add_action(align_center_h)
+
+        align_right = Gio.SimpleAction.new("align-right", None)
+        align_right.connect("activate", lambda a, p: self.canvas.align_selected_nodes("right"))
+        self.canvas.action_group.add_action(align_right)
+
+        align_top = Gio.SimpleAction.new("align-top", None)
+        align_top.connect("activate", lambda a, p: self.canvas.align_selected_nodes("top"))
+        self.canvas.action_group.add_action(align_top)
+
+        align_center_v = Gio.SimpleAction.new("align-center-v", None)
+        align_center_v.connect("activate", lambda a, p: self.canvas.align_selected_nodes("center-v"))
+        self.canvas.action_group.add_action(align_center_v)
+
+        align_bottom = Gio.SimpleAction.new("align-bottom", None)
+        align_bottom.connect("activate", lambda a, p: self.canvas.align_selected_nodes("bottom"))
+        self.canvas.action_group.add_action(align_bottom)
+
+        # Distribution actions
+        distribute_h = Gio.SimpleAction.new("distribute-h", None)
+        distribute_h.connect("activate", lambda a, p: self.canvas.distribute_selected_nodes("horizontal"))
+        self.canvas.action_group.add_action(distribute_h)
+
+        distribute_v = Gio.SimpleAction.new("distribute-v", None)
+        distribute_v.connect("activate", lambda a, p: self.canvas.distribute_selected_nodes("vertical"))
+        self.canvas.action_group.add_action(distribute_v)
+
         # Connect canvas signal to update node list when library changes
         # self.canvas.connect("node-saved-to-library", lambda c: self._populate_node_list())
 
