@@ -33,6 +33,7 @@ assets_sources = [
   '__init__.py',
   'main.py',
   'window.py',
+  'canvas.py',
   'yahoo_request.py',
   'fred_request.py',
   'node.py',

@@ -18,17 +18,30 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Configurar matplotlib para backend não-interativo ANTES de qualquer outro import
-import matplotlib
-matplotlib.use('Agg')
+# import matplotlib
+# matplotlib.use('Agg')
 
 import sys
+import os
 import gi
-import numpy
+# import numpy
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
 from gi.repository import Gtk, Gio, Adw
+from pathlib import Path
+
+# Carregar GResource para desenvolvimento (meson faz isso na instalação)
+gresource_path = Path(__file__).parent / 'assets.gresource'
+if gresource_path.exists():
+    resource = Gio.Resource.load(str(gresource_path))
+    Gio.resources_register(resource)
+else:
+    # Workaround: Carregar .ui files manualmente para desenvolvimento
+    print("⚠ GResource not found - using direct .ui file loading for development")
+    print("  Run 'meson compile' for production build")
+
 from .window import AssetsWindow
 
 

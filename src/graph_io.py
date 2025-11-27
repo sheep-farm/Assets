@@ -107,19 +107,134 @@ def get_default_save_directory():
 def get_recent_files(max_files=10):
     """
     Retorna lista de arquivos recentes.
-    
+
     Args:
         max_files: Número máximo de arquivos
-        
+
     Returns:
         list: Lista de caminhos de arquivos
     """
     save_dir = get_default_save_directory()
-    
+
     # Pegar todos arquivos .assets
     files = list(save_dir.glob("*.assets"))
-    
+
     # Ordenar por data de modificação (mais recente primeiro)
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    
+
     return files[:max_files]
+
+
+def get_templates_directory():
+    """Retorna diretório padrão para templates de grafos"""
+    home = Path.home()
+    templates_dir = home / ".local" / "share" / "assets" / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    return templates_dir
+
+
+def save_graph_template(nodes, connections, template_name, description=""):
+    """
+    Salva grafo atual como template.
+
+    Args:
+        nodes: Lista de objetos Node
+        connections: Lista de conexões
+        template_name: Nome do template
+        description: Descrição do template
+
+    Returns:
+        bool: True se salvou com sucesso
+    """
+    try:
+        templates_dir = get_templates_directory()
+
+        # Serializar grafo
+        nodes_data = [node.to_dict() for node in nodes]
+
+        connections_data = []
+        for conn in connections:
+            src_node, src_port, dst_node, dst_port = conn
+            connections_data.append({
+                "source_node_id": src_node.id,
+                "source_port": src_port,
+                "target_node_id": dst_node.id,
+                "target_port": dst_port
+            })
+
+        # Estrutura do template
+        template_data = {
+            "name": template_name,
+            "description": description,
+            "created_at": Path.ctime(Path.home()),  # Timestamp
+            "nodes": nodes_data,
+            "connections": connections_data
+        }
+
+        # Salvar em arquivo
+        template_file = templates_dir / f"{template_name}.template"
+        with open(template_file, 'w', encoding='utf-8') as f:
+            json.dump(template_data, f, indent=2, ensure_ascii=False)
+
+        print(f"✓ Template salvo: {template_file}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Erro ao salvar template: {e}")
+        return False
+
+
+def load_graph_template(template_name):
+    """
+    Carrega template de grafo.
+
+    Args:
+        template_name: Nome do template
+
+    Returns:
+        dict: Dicionário com dados do template ou None se erro
+    """
+    try:
+        templates_dir = get_templates_directory()
+        template_file = templates_dir / f"{template_name}.template"
+
+        if not template_file.exists():
+            print(f"❌ Template não encontrado: {template_name}")
+            return None
+
+        with open(template_file, 'r', encoding='utf-8') as f:
+            template_data = json.load(f)
+
+        return template_data
+
+    except Exception as e:
+        print(f"❌ Erro ao carregar template: {e}")
+        return None
+
+
+def get_all_templates():
+    """
+    Retorna lista de todos os templates disponíveis.
+
+    Returns:
+        list: Lista de dicionários com info dos templates
+    """
+    templates_dir = get_templates_directory()
+    templates = []
+
+    for template_file in templates_dir.glob("*.template"):
+        try:
+            with open(template_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            templates.append({
+                "name": data.get("name", template_file.stem),
+                "description": data.get("description", ""),
+                "file": str(template_file),
+                "num_nodes": len(data.get("nodes", [])),
+                "num_connections": len(data.get("connections", []))
+            })
+        except Exception as e:
+            print(f"⚠️  Erro ao ler template {template_file.name}: {e}")
+
+    return templates

@@ -1,95 +1,116 @@
 #!/usr/bin/env python3
 """
-node_dialogs.py - Dialogs para edição de nós
+node_dialogs.py - Dialogs para edição de nós (Adwaita-style)
 """
 
-from gi.repository import Gtk, Adw, GtkSource
+import gi
+gi.require_version('GtkSource', '5')
+from gi.repository import Gtk, Adw, Gio, GtkSource
 
 
-class CodeEditorDialog(Gtk.Dialog):
-    """Dialog para editar código Python do nó"""
-    
+class CodeEditorDialog(Adw.Window):
+    """Dialog Adwaita para editar código Python do nó"""
+
     def __init__(self, parent, node):
-        super().__init__(title=f"Edit Code: {node.title}")
+        super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(700, 500)
-        
+
         self.node = node
-        
-        # Adicionar botões
-        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        self.add_button("Apply", Gtk.ResponseType.OK)
-        self.set_default_response(Gtk.ResponseType.OK)
-        
-        # Content area
-        content = self.get_content_area()
-        content.set_spacing(12)
+
+        # Main box
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+
+        # Adwaita HeaderBar
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title=f"Edit Code: {node.title}", subtitle="Python Code Editor"))
+
+        # Botão Cancel
+        cancel_button = Gtk.Button(label="Cancel")
+        cancel_button.add_css_class("flat")
+        cancel_button.connect("clicked", lambda b: self.close())
+        header.pack_start(cancel_button)
+
+        # Botão Apply (suggested action)
+        apply_button = Gtk.Button(label="Apply")
+        apply_button.add_css_class("suggested-action")
+        apply_button.connect("clicked", self._on_apply)
+        header.pack_end(apply_button)
+
+        main_box.append(header)
+
+        # Content area com ToolbarView
+        toolbar_view = Adw.ToolbarView()
+
+        # Content
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        content.set_spacing(6)
         content.set_margin_top(12)
         content.set_margin_bottom(12)
         content.set_margin_start(12)
         content.set_margin_end(12)
         
-        # Label de instruções
-        instructions = Gtk.Label()
-        instructions.set_markup(
-            "<b>Python Code</b>\n"
-            "<small>Return values as tuple: return (output1, output2, ...)\n"
-            "Inputs available as: in0, in1, in2, ...</small>"
-        )
-        instructions.set_xalign(0)
-        content.append(instructions)
-        
-        # Tentar usar GtkSourceView para syntax highlighting
-        try:
-            # ScrolledWindow para o editor
-            scrolled = Gtk.ScrolledWindow()
-            scrolled.set_vexpand(True)
-            scrolled.set_hexpand(True)
-            
-            # SourceView (editor com syntax highlighting)
-            self.text_view = GtkSource.View()
-            self.text_buffer = self.text_view.get_buffer()
-            
-            # Configurar Python language
-            lang_manager = GtkSource.LanguageManager.get_default()
-            python_lang = lang_manager.get_language("python3")
-            if python_lang:
-                self.text_buffer.set_language(python_lang)
-            
-            # Configurar scheme (tema)
-            style_manager = GtkSource.StyleSchemeManager.get_default()
-            scheme = style_manager.get_scheme("classic")  # Tema claro
-            if scheme:
-                self.text_buffer.set_style_scheme(scheme)
-            
-            # Configurações do editor
-            self.text_view.set_show_line_numbers(True)
-            self.text_view.set_auto_indent(True)
-            self.text_view.set_indent_width(4)
-            self.text_view.set_insert_spaces_instead_of_tabs(True)
-            self.text_view.set_monospace(True)
-            
-        except (ImportError, AttributeError):
-            # Fallback para TextView simples se GtkSourceView não disponível
-            scrolled = Gtk.ScrolledWindow()
-            scrolled.set_vexpand(True)
-            scrolled.set_hexpand(True)
-            
-            self.text_view = Gtk.TextView()
-            self.text_buffer = self.text_view.get_buffer()
-            self.text_view.set_monospace(True)
-            self.text_view.set_wrap_mode(Gtk.WrapMode.WORD)
-        
+        # Info banner
+        banner = Adw.Banner(title="Return values as tuple: return (output1, output2, ...)")
+        banner.set_revealed(True)
+        banner.add_css_class("inline")
+        content.append(banner)
+
+        # Usar GtkSourceView com syntax highlighting
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        scrolled.set_hexpand(True)
+        scrolled.add_css_class("card")
+
+        # SourceView (editor com syntax highlighting)
+        self.text_view = GtkSource.View()
+        self.text_buffer = self.text_view.get_buffer()
+
+        # Configurar Python language
+        lang_manager = GtkSource.LanguageManager.get_default()
+        python_lang = lang_manager.get_language("python3")
+        if python_lang:
+            self.text_buffer.set_language(python_lang)
+
+        # Configurar scheme (tema)
+        style_manager = GtkSource.StyleSchemeManager.get_default()
+        scheme = style_manager.get_scheme("Adwaita")  # Tema Adwaita
+        if scheme:
+            self.text_buffer.set_style_scheme(scheme)
+
+        # Configurações do editor
+        self.text_view.set_show_line_numbers(True)
+        self.text_view.set_auto_indent(True)
+        self.text_view.set_indent_width(4)
+        self.text_view.set_insert_spaces_instead_of_tabs(True)
+        self.text_view.set_monospace(True)
+        self.text_view.set_top_margin(12)
+        self.text_view.set_bottom_margin(12)
+        self.text_view.set_left_margin(12)
+        self.text_view.set_right_margin(12)
+
         # Definir código atual
         self.text_buffer.set_text(node.code)
-        
+
         scrolled.set_child(self.text_view)
         content.append(scrolled)
-        
+
+        toolbar_view.set_content(content)
+        main_box.append(toolbar_view)
+
+        self.set_content(main_box)
+
         # Dar foco ao editor
         self.text_view.grab_focus()
-    
+
+    def _on_apply(self, button):
+        """Callback do botão Apply"""
+        # Emitir sinal customizado ou chamar callback
+        if hasattr(self, 'on_apply_callback'):
+            self.on_apply_callback(self.get_code())
+        self.close()
+
     def get_code(self):
         """Retorna o código editado"""
         start = self.text_buffer.get_start_iter()
@@ -97,122 +118,127 @@ class CodeEditorDialog(Gtk.Dialog):
         return self.text_buffer.get_text(start, end, False)
 
 
-class RenameNodeDialog(Gtk.Dialog):
-    """Dialog para renomear nó"""
-    
+class RenameNodeDialog(Adw.MessageDialog):
+    """Dialog Adwaita para renomear nó"""
+
     def __init__(self, parent, node):
-        super().__init__(title="Rename Node")
+        super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
-        self.set_default_size(400, 150)
-        
+
         self.node = node
-        
-        # Adicionar botões
-        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        self.add_button("Rename", Gtk.ResponseType.OK)
-        self.set_default_response(Gtk.ResponseType.OK)
-        
-        # Content area
-        content = self.get_content_area()
-        content.set_spacing(12)
-        content.set_margin_top(12)
-        content.set_margin_bottom(12)
-        content.set_margin_start(12)
-        content.set_margin_end(12)
-        
-        # Label
-        label = Gtk.Label(label="Node Name:")
-        label.set_xalign(0)
-        content.append(label)
-        
-        # Entry
+
+        self.set_heading("Rename Node")
+        self.set_body("Enter a new name for this node")
+
+        # Entry dentro do dialog
         self.entry = Gtk.Entry()
         self.entry.set_text(node.title)
-        self.entry.set_activates_default(True)  # Enter confirma
-        content.append(self.entry)
-        
+        self.entry.set_hexpand(True)
+        self.entry.set_margin_top(12)
+        self.entry.set_margin_bottom(12)
+        self.entry.set_margin_start(12)
+        self.entry.set_margin_end(12)
+        self.entry.connect("activate", lambda e: self.response("rename"))
+
+        self.set_extra_child(self.entry)
+
+        # Botões
+        self.add_response("cancel", "Cancel")
+        self.add_response("rename", "Rename")
+        self.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+        self.set_default_response("rename")
+        self.set_close_response("cancel")
+
         # Dar foco ao entry e selecionar texto
         self.entry.grab_focus()
         self.entry.select_region(0, -1)
-    
+
     def get_name(self):
         """Retorna o novo nome"""
         return self.entry.get_text().strip()
 
 
-class SaveToLibraryDialog(Gtk.Dialog):
-    """Dialog para salvar nó na biblioteca"""
+class SaveToLibraryDialog(Adw.Window):
+    """Dialog Adwaita para salvar nó na biblioteca"""
 
     def __init__(self, parent, node):
-        super().__init__(title="Save to Library")
+        super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
-        self.set_default_size(400, 200)
+        self.set_default_size(450, 400)
 
         self.node = node
 
-        # Adicionar botões
-        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        self.add_button("Save", Gtk.ResponseType.OK)
-        self.set_default_response(Gtk.ResponseType.OK)
+        # Main box
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
-        # Content area
-        content = self.get_content_area()
-        content.set_spacing(12)
-        content.set_margin_top(12)
-        content.set_margin_bottom(12)
-        content.set_margin_start(12)
-        content.set_margin_end(12)
+        # HeaderBar
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title="Save to Library", subtitle=f"Node: {node.title}"))
 
-        # Informação
-        info_label = Gtk.Label()
-        info_label.set_markup(
-            f"<b>Save node as template</b>\n"
-            f"<small>Node: {node.title}</small>"
-        )
-        info_label.set_xalign(0)
-        content.append(info_label)
+        cancel_button = Gtk.Button(label="Cancel")
+        cancel_button.add_css_class("flat")
+        cancel_button.connect("clicked", lambda b: self.close())
+        header.pack_start(cancel_button)
 
-        # Nome do template
-        name_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        name_label = Gtk.Label(label="Template Name:")
-        name_label.set_size_request(120, -1)
-        name_label.set_xalign(0)
-        self.name_entry = Gtk.Entry()
-        self.name_entry.set_text(node.title)
-        self.name_entry.set_hexpand(True)
-        self.name_entry.set_activates_default(True)
-        name_box.append(name_label)
-        name_box.append(self.name_entry)
-        content.append(name_box)
+        save_button = Gtk.Button(label="Save")
+        save_button.add_css_class("suggested-action")
+        save_button.connect("clicked", self._on_save)
+        header.pack_end(save_button)
+
+        main_box.append(header)
+
+        # Content com PreferencesGroup
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        content_box.set_margin_top(24)
+        content_box.set_margin_bottom(24)
+        content_box.set_margin_start(24)
+        content_box.set_margin_end(24)
+
+        # PreferencesGroup
+        prefs_group = Adw.PreferencesGroup()
+        prefs_group.set_title("Template Information")
+        prefs_group.set_description("Save this node as a reusable template")
+
+        # Nome do template (ActionRow com Entry)
+        name_row = Adw.EntryRow()
+        name_row.set_title("Template Name")
+        name_row.set_text(node.title)
+        self.name_entry = name_row
+        prefs_group.add(name_row)
 
         # Categoria
-        category_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        category_label = Gtk.Label(label="Category:")
-        category_label.set_size_request(120, -1)
-        category_label.set_xalign(0)
-        self.category_entry = Gtk.Entry()
-        self.category_entry.set_text("My Nodes")
-        self.category_entry.set_hexpand(True)
-        self.category_entry.set_activates_default(True)
-        category_box.append(category_label)
-        category_box.append(self.category_entry)
-        content.append(category_box)
+        category_row = Adw.EntryRow()
+        category_row.set_title("Category")
+        category_row.set_text("My Nodes")
+        self.category_entry = category_row
+        prefs_group.add(category_row)
 
         # Descrição
-        desc_label = Gtk.Label(label="Description (optional):")
-        desc_label.set_xalign(0)
-        content.append(desc_label)
+        desc_row = Adw.EntryRow()
+        desc_row.set_title("Description")
+        desc_row.set_text(f"Custom node: {node.title}")
+        self.desc_entry = desc_row
+        prefs_group.add(desc_row)
 
-        self.desc_entry = Gtk.Entry()
-        self.desc_entry.set_placeholder_text(f"Custom node: {node.title}")
-        self.desc_entry.set_activates_default(True)
-        content.append(self.desc_entry)
+        content_box.append(prefs_group)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_child(content_box)
+        main_box.append(scrolled)
+
+        self.set_content(main_box)
 
         # Dar foco ao nome
-        self.name_entry.grab_focus()
-        self.name_entry.select_region(0, -1)
+        name_row.grab_focus()
+
+    def _on_save(self, button):
+        """Callback do botão Save"""
+        if hasattr(self, 'on_save_callback'):
+            self.on_save_callback(self.get_info())
+        self.close()
 
     def get_info(self):
         """Retorna informações do template"""
@@ -223,145 +249,213 @@ class SaveToLibraryDialog(Gtk.Dialog):
         }
 
 
-class NodePropertiesDialog(Gtk.Dialog):
-    """Dialog completo de propriedades do nó"""
-    
+class NodePropertiesDialog(Adw.PreferencesWindow):
+    """Dialog Adwaita de propriedades do nó (estilo Settings)"""
+
     def __init__(self, parent, node):
-        super().__init__(title=f"Properties: {node.title}")
+        super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
-        self.set_default_size(500, 400)
-        
+        self.set_default_size(600, 500)
+        self.set_search_enabled(True)
+
         self.node = node
-        
-        # Adicionar botões
-        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        self.add_button("Apply", Gtk.ResponseType.OK)
-        self.set_default_response(Gtk.ResponseType.OK)
-        
-        # Content area com notebook
-        content = self.get_content_area()
-        content.set_spacing(0)
-        
-        notebook = Gtk.Notebook()
-        
-        # Tab 1: General
-        general_page = self._create_general_page()
-        notebook.append_page(general_page, Gtk.Label(label="General"))
-        
-        # Tab 2: Code
-        code_page = self._create_code_page()
-        notebook.append_page(code_page, Gtk.Label(label="Code"))
-        
-        # Tab 3: Info
-        info_page = self._create_info_page()
-        notebook.append_page(info_page, Gtk.Label(label="Info"))
-        
-        content.append(notebook)
+
+        # Criar páginas
+        self._create_general_page()
+        self._create_code_page()
+        self._create_info_page()
+
+        # Botão Apply no header
+        self.connect("close-request", self._on_close_request)
+
+    def _on_close_request(self, window):
+        """Chamado ao fechar janela"""
+        # Aplicar mudanças automaticamente
+        if hasattr(self, 'on_apply_callback'):
+            self.on_apply_callback(self.get_properties())
+        return False  # Permite fechar
     
     def _create_general_page(self):
-        """Cria página de propriedades gerais"""
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_top(12)
-        box.set_margin_bottom(12)
-        box.set_margin_start(12)
-        box.set_margin_end(12)
-        
+        """Cria página de propriedades gerais com PreferencesGroup"""
+        page = Adw.PreferencesPage()
+        page.set_title("General")
+        page.set_icon_name("emblem-system-symbolic")
+
+        # Group: Node Settings
+        group = Adw.PreferencesGroup()
+        group.set_title("Node Settings")
+        group.set_description("Basic node configuration")
+
         # Nome
-        name_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        name_label = Gtk.Label(label="Name:")
-        name_label.set_size_request(100, -1)
-        name_label.set_xalign(0)
-        self.name_entry = Gtk.Entry()
-        self.name_entry.set_text(self.node.title)
-        self.name_entry.set_hexpand(True)
-        name_box.append(name_label)
-        name_box.append(self.name_entry)
-        box.append(name_box)
-        
-        # Número de inputs
-        inputs_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        inputs_label = Gtk.Label(label="Inputs:")
-        inputs_label.set_size_request(100, -1)
-        inputs_label.set_xalign(0)
-        self.inputs_spin = Gtk.SpinButton()
-        self.inputs_spin.set_range(0, 10)
-        self.inputs_spin.set_increments(1, 1)
-        self.inputs_spin.set_value(self.node.num_inputs)
-        inputs_box.append(inputs_label)
-        inputs_box.append(self.inputs_spin)
-        box.append(inputs_box)
-        
+        name_row = Adw.EntryRow()
+        name_row.set_title("Name")
+        name_row.set_text(self.node.title)
+        self.name_entry = name_row
+        group.add(name_row)
+
+        # Número de inputs (SpinRow)
+        inputs_row = Adw.SpinRow.new_with_range(0, 10, 1)
+        inputs_row.set_title("Input Ports")
+        inputs_row.set_subtitle("Number of input connections")
+        inputs_row.set_value(self.node.num_inputs)
+        self.inputs_spin = inputs_row
+        group.add(inputs_row)
+
         # Número de outputs
-        outputs_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        outputs_label = Gtk.Label(label="Outputs:")
-        outputs_label.set_size_request(100, -1)
-        outputs_label.set_xalign(0)
-        self.outputs_spin = Gtk.SpinButton()
-        self.outputs_spin.set_range(0, 10)
-        self.outputs_spin.set_increments(1, 1)
-        self.outputs_spin.set_value(self.node.num_outputs)
-        outputs_box.append(outputs_label)
-        outputs_box.append(self.outputs_spin)
-        box.append(outputs_box)
-        
-        return box
+        outputs_row = Adw.SpinRow.new_with_range(0, 10, 1)
+        outputs_row.set_title("Output Ports")
+        outputs_row.set_subtitle("Number of output connections")
+        outputs_row.set_value(self.node.num_outputs)
+        self.outputs_spin = outputs_row
+        group.add(outputs_row)
+
+        page.add(group)
+        self.add(page)
     
     def _create_code_page(self):
         """Cria página de edição de código"""
+        page = Adw.PreferencesPage()
+        page.set_title("Code")
+        page.set_icon_name("text-x-python-symbolic")
+
+        group = Adw.PreferencesGroup()
+        group.set_title("Python Code")
+        group.set_description("Return values as tuple: return (output1, output2, ...)")
+
+        # Editor em um box
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        box.set_margin_top(12)
-        box.set_margin_bottom(12)
-        box.set_margin_start(12)
-        box.set_margin_end(12)
-        
-        # Instruções
-        instructions = Gtk.Label()
-        instructions.set_markup(
-            "<small>Return values as tuple: <tt>return (output1, output2, ...)</tt>\n"
-            "Inputs available as: <tt>in0, in1, in2, ...</tt></small>"
-        )
-        instructions.set_xalign(0)
-        box.append(instructions)
-        
-        # Editor
+
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         scrolled.set_hexpand(True)
-        
+        scrolled.set_min_content_height(300)
+
         self.code_view = Gtk.TextView()
         self.code_buffer = self.code_view.get_buffer()
         self.code_view.set_monospace(True)
         self.code_view.set_wrap_mode(Gtk.WrapMode.WORD)
+        self.code_view.set_top_margin(12)
+        self.code_view.set_bottom_margin(12)
+        self.code_view.set_left_margin(12)
+        self.code_view.set_right_margin(12)
         self.code_buffer.set_text(self.node.code)
-        
+
         scrolled.set_child(self.code_view)
         box.append(scrolled)
-        
-        return box
+
+        # Adicionar box como child do grupo usando ActionRow
+        row = Adw.ActionRow()
+        row.set_child(box)
+        group.add(row)
+
+        page.add(group)
+        self.add(page)
     
     def _create_info_page(self):
-        """Cria página de informações"""
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_top(12)
-        box.set_margin_bottom(12)
-        box.set_margin_start(12)
-        box.set_margin_end(12)
-        
-        # ID
-        id_label = Gtk.Label()
-        id_label.set_markup(f"<b>Node ID:</b>\n<tt>{self.node.id}</tt>")
-        id_label.set_xalign(0)
-        id_label.set_selectable(True)
-        box.append(id_label)
-        
-        # Posição
-        pos_label = Gtk.Label()
-        pos_label.set_markup(f"<b>Position:</b>\n({self.node.x:.0f}, {self.node.y:.0f})")
-        pos_label.set_xalign(0)
-        box.append(pos_label)
-        
-        return box
+        """Cria página de informações e metadata"""
+        page = Adw.PreferencesPage()
+        page.set_title("Info")
+        page.set_icon_name("info-symbolic")
+
+        # Group: Node Info
+        info_group = Adw.PreferencesGroup()
+        info_group.set_title("Node Information")
+
+        id_row = Adw.ActionRow()
+        id_row.set_title("Node ID")
+        id_row.set_subtitle(str(self.node.id))
+        info_group.add(id_row)
+
+        pos_row = Adw.ActionRow()
+        pos_row.set_title("Position")
+        pos_row.set_subtitle(f"({self.node.x:.0f}, {self.node.y:.0f})")
+        info_group.add(pos_row)
+
+        page.add(info_group)
+
+        # Group: Metadata
+        meta_group = Adw.PreferencesGroup()
+        meta_group.set_title("Metadata")
+        meta_group.set_description("Professional node metadata for library")
+
+        # Descrição
+        desc_row = Adw.EntryRow()
+        desc_row.set_title("Description")
+        desc_row.set_text(self.node.description)
+        self.desc_entry = desc_row
+        meta_group.add(desc_row)
+
+        # Autor
+        author_row = Adw.EntryRow()
+        author_row.set_title("Author")
+        author_row.set_text(self.node.author)
+        self.author_entry = author_row
+        meta_group.add(author_row)
+
+        # Versão
+        version_row = Adw.EntryRow()
+        version_row.set_title("Version")
+        version_row.set_text(self.node.version)
+        self.version_entry = version_row
+        meta_group.add(version_row)
+
+        # Tags
+        tags_row = Adw.EntryRow()
+        tags_row.set_title("Tags")
+        tags_row.set_text(", ".join(self.node.tags))
+        self.tags_entry = tags_row
+        meta_group.add(tags_row)
+
+        # Categoria
+        category_row = Adw.EntryRow()
+        category_row.set_title("Category")
+        category_row.set_text(self.node.category)
+        self.category_entry = category_row
+        meta_group.add(category_row)
+
+        page.add(meta_group)
+
+        # Group: Appearance
+        appearance_group = Adw.PreferencesGroup()
+        appearance_group.set_title("Appearance")
+
+        # Color picker usando ActionRow com custom child
+        color_row = Adw.ActionRow()
+        color_row.set_title("Custom Color")
+        color_row.set_subtitle("Set a custom header color")
+
+        self.color_button = Gtk.ColorButton()
+        if self.node.custom_color:
+            from gi.repository import Gdk
+            rgba = Gdk.RGBA()
+            rgba.red, rgba.green, rgba.blue = self.node.custom_color
+            rgba.alpha = 1.0
+            self.color_button.set_rgba(rgba)
+
+        color_row.add_suffix(self.color_button)
+        appearance_group.add(color_row)
+
+        page.add(appearance_group)
+
+        # Group: Statistics (se houver)
+        if self.node.total_executions > 0:
+            stats_group = Adw.PreferencesGroup()
+            stats_group.set_title("Statistics")
+
+            exec_row = Adw.ActionRow()
+            exec_row.set_title("Total Executions")
+            exec_row.set_subtitle(str(self.node.total_executions))
+            stats_group.add(exec_row)
+
+            time_row = Adw.ActionRow()
+            time_row.set_title("Last Execution Time")
+            time_row.set_subtitle(f"{self.node.last_execution_time*1000:.1f}ms")
+            stats_group.add(time_row)
+
+            page.add(stats_group)
+
+        self.add(page)
     
     def get_properties(self):
         """Retorna dicionário com as propriedades editadas"""
@@ -369,10 +463,24 @@ class NodePropertiesDialog(Gtk.Dialog):
         start = self.code_buffer.get_start_iter()
         end = self.code_buffer.get_end_iter()
         code = self.code_buffer.get_text(start, end, False)
-        
+
+        # Pegar cor customizada
+        rgba = self.color_button.get_rgba()
+        custom_color = (rgba.red, rgba.green, rgba.blue) if rgba else None
+
+        # Parse tags
+        tags_text = self.tags_entry.get_text().strip()
+        tags = [t.strip() for t in tags_text.split(',') if t.strip()]
+
         return {
             "title": self.name_entry.get_text().strip(),
             "num_inputs": int(self.inputs_spin.get_value()),
             "num_outputs": int(self.outputs_spin.get_value()),
-            "code": code
+            "code": code,
+            "description": self.desc_entry.get_text().strip(),
+            "author": self.author_entry.get_text().strip(),
+            "version": self.version_entry.get_text().strip(),
+            "tags": tags,
+            "category": self.category_entry.get_text().strip(),
+            "custom_color": custom_color
         }

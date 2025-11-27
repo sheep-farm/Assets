@@ -72,6 +72,24 @@ class Node:
         self._last_outputs = None     # Resultados da última execução
         self._cache_valid = False     # Flag de validade do cache
 
+        # Metadata profissional
+        self.description = ""         # Descrição do que o nó faz
+        self.author = ""              # Autor do nó
+        self.version = "1.0"          # Versão do nó
+        self.tags = []                # Tags para busca
+        self.category = ""            # Categoria
+
+        # Documentação de portas
+        self.input_docs = []          # Descrição de cada porta de entrada
+        self.output_docs = []         # Descrição de cada porta de saída
+
+        # Customização visual
+        self.custom_color = None      # Cor customizada (tuple RGB ou None)
+
+        # Profiling
+        self.last_execution_time = 0.0  # Tempo da última execução em segundos
+        self.total_executions = 0       # Contador de execuções
+
     @property
     def code(self):
         """Retorna o código Python do nó"""
@@ -126,8 +144,12 @@ class Node:
 
     def _draw_header(self, context):
         """Desenha o header (parte azul com título)"""
-        # Retângulo do header
-        context.set_source_rgb(*self.COLOR_HEADER)
+        # Retângulo do header - usar cor customizada se disponível
+        if self.custom_color:
+            context.set_source_rgb(*self.custom_color)
+        else:
+            context.set_source_rgb(*self.COLOR_HEADER)
+
         context.rectangle(
             self.x,
             self.y,
@@ -148,6 +170,10 @@ class Node:
 
         context.move_to(text_x, text_y)
         context.show_text(self.title)
+
+        # Desenhar indicador de profiling se houver dados
+        if self.last_execution_time > 0:
+            self._draw_profiling_badge(context)
 
     def _draw_input_ports(self, context):
         """Desenha portas de entrada (bolinhas à esquerda)"""
@@ -400,10 +426,26 @@ class Node:
         self._last_inputs = None
         self._last_outputs = None
 
+    def _draw_profiling_badge(self, context):
+        """Desenha badge com tempo de execução no canto superior direito"""
+        time_ms = self.last_execution_time * 1000
+        badge_text = f"{time_ms:.1f}ms"
+
+        context.set_source_rgba(0, 0, 0, 0.7)
+        context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        context.set_font_size(9)
+
+        extents = context.text_extents(badge_text)
+        badge_x = self.x + self.WIDTH - extents.width - 8
+        badge_y = self.y + 6
+
+        context.move_to(badge_x, badge_y + extents.height)
+        context.show_text(badge_text)
+
     def to_dict(self):
         """
         Serializa o nó para um dicionário (para salvar em arquivo).
-        
+
         Returns:
             dict: Representação do nó em dicionário
         """
@@ -414,17 +456,25 @@ class Node:
             "title": self.title,
             "num_inputs": self.num_inputs,
             "num_outputs": self.num_outputs,
-            "code": self._code  # Usa _code diretamente
+            "code": self._code,
+            "description": self.description,
+            "author": self.author,
+            "version": self.version,
+            "tags": self.tags,
+            "category": self.category,
+            "input_docs": self.input_docs,
+            "output_docs": self.output_docs,
+            "custom_color": self.custom_color
         }
     
     @classmethod
     def from_dict(cls, data):
         """
         Cria um nó a partir de um dicionário (para carregar de arquivo).
-        
+
         Args:
             data: Dicionário com dados do nó
-            
+
         Returns:
             Node: Nova instância do nó
         """
@@ -434,7 +484,15 @@ class Node:
             title=data["title"],
             num_inputs=data["num_inputs"],
             num_outputs=data["num_outputs"],
-            node_id=data.get("id")  # Usa ID existente ou gera novo
+            node_id=data.get("id")
         )
         node.code = data.get("code", "")
+        node.description = data.get("description", "")
+        node.author = data.get("author", "")
+        node.version = data.get("version", "1.0")
+        node.tags = data.get("tags", [])
+        node.category = data.get("category", "")
+        node.input_docs = data.get("input_docs", [])
+        node.output_docs = data.get("output_docs", [])
+        node.custom_color = data.get("custom_color")
         return node
