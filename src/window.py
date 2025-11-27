@@ -71,11 +71,17 @@ class AssetsWindow(Adw.ApplicationWindow):
         # Popular lista inicial de nodes
         self._populate_node_list()
 
-        # Criar e adicionar canvas
+        # Criar canvas
         self.canvas = AssetsCanvas()
-        self.canvas.set_vexpand(True)
-        self.canvas.set_hexpand(True)
-        self.canvas_box.append(self.canvas)
+
+        # Colocar canvas dentro de ScrolledWindow
+        self.scrolled_window = Gtk.ScrolledWindow()
+        self.scrolled_window.set_vexpand(True)
+        self.scrolled_window.set_hexpand(True)
+        self.scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        self.scrolled_window.set_child(self.canvas)
+
+        self.canvas_box.append(self.scrolled_window)
 
         # Criar e adicionar output panel
         self.output_panel = OutputPanel()
@@ -257,6 +263,9 @@ class AssetsWindow(Adw.ApplicationWindow):
                     # This ensures connections can be drawn immediately
                     for node in nodes:
                         node._calculate_port_positions()
+
+                    # Update canvas size based on nodes and zoom
+                    self.canvas._update_canvas_size()
 
                     self.canvas.queue_draw()
 
@@ -457,6 +466,9 @@ class AssetsWindow(Adw.ApplicationWindow):
             node.set_selected(False)
         new_node.set_selected(True)
         self.canvas.focused_node_index = len(self.canvas.nodes) - 1
+
+        # Update canvas size
+        self.canvas._update_canvas_size()
 
         self.canvas.queue_draw()
 

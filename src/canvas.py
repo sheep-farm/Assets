@@ -76,6 +76,32 @@ class AssetsCanvas(Gtk.DrawingArea):
         # print("  - Ctrl+V para colar")
         # print("  - Ctrl+D para duplicar")
 
+    def _update_canvas_size(self):
+        """Atualiza o tamanho do canvas baseado nos nós e zoom"""
+        if not self.nodes:
+            # Tamanho padrão se não há nós
+            self.set_size_request(int(4000 * self.zoom_level), int(4000 * self.zoom_level))
+            return
+
+        # Encontrar limites dos nós
+        min_x = min(node.x for node in self.nodes)
+        min_y = min(node.y for node in self.nodes)
+        max_x = max(node.x + node.WIDTH for node in self.nodes)
+        max_y = max(node.y + node.HEIGHT_HEADER + node.PADDING +
+                   max(node.num_inputs, node.num_outputs) * node.HEIGHT_PORT + node.PADDING
+                   for node in self.nodes)
+
+        # Adicionar margem
+        margin = 500
+        width = int((max_x - min_x + margin * 2) * self.zoom_level)
+        height = int((max_y - min_y + margin * 2) * self.zoom_level)
+
+        # Garantir tamanho mínimo
+        width = max(width, int(2000 * self.zoom_level))
+        height = max(height, int(2000 * self.zoom_level))
+
+        self.set_size_request(width, height)
+
     def _setup_mouse_events(self):
         """Configura controladores de eventos de mouse"""
 
@@ -278,6 +304,7 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         if old_zoom != self.zoom_level:
 #            print(f"🔍 Zoom: {self.zoom_level * 100:.0f}%")
+            self._update_canvas_size()
             self.queue_draw()
 
         return True
@@ -884,27 +911,57 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return result
 
+    def _node_has_connections(self, node):
+        """
+        Verifica se um nó possui pelo menos uma conexão (entrada ou saída).
+
+        Args:
+            node: Nó a verificar
+
+        Returns:
+            bool: True se o nó tem pelo menos uma conexão, False caso contrário
+        """
+        for source_node, out_port, target_node, in_port in self.connections:
+            if source_node == node or target_node == node:
+                return True
+        return False
+
     def _group_by_execution_level(self):
         """
         Agrupa nós por nível de execução (profundidade no DAG).
         Nós no mesmo nível podem ser executados em paralelo.
 
+        NOTA: Nós sem nenhuma conexão (entrada E saída) são excluídos.
+
         Returns:
             list[list[Node]]: Lista de níveis, cada nível contém lista de nós
         """
+        # Filtrar nós sem conexões
+        active_nodes = [node for node in self.nodes if self._node_has_connections(node)]
+        inactive_nodes = [node for node in self.nodes if not self._node_has_connections(node)]
+
+        # Mostrar nós inativos
+        if inactive_nodes:
+            print(f"⏸️  Nós inativos (sem conexões): {[node.title for node in inactive_nodes]}")
+
+        # Se não há nós ativos, retornar lista vazia
+        if not active_nodes:
+            return []
+
         # Calcular profundidade de cada nó (distância máxima da raiz)
-        depth = {node: 0 for node in self.nodes}
+        depth = {node: 0 for node in active_nodes}
 
         # Construir adjacências inversas (target -> sources)
-        predecessors = {node: [] for node in self.nodes}
+        predecessors = {node: [] for node in active_nodes}
         for source_node, out_port, target_node, in_port in self.connections:
-            predecessors[target_node].append(source_node)
+            if target_node in active_nodes and source_node in active_nodes:
+                predecessors[target_node].append(source_node)
 
         # Calcular profundidade de cada nó
         changed = True
         while changed:
             changed = False
-            for node in self.nodes:
+            for node in active_nodes:
                 if predecessors[node]:
                     max_pred_depth = max(depth[pred] for pred in predecessors[node])
                     new_depth = max_pred_depth + 1
@@ -916,7 +973,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         max_depth = max(depth.values()) if depth else 0
         levels = [[] for _ in range(max_depth + 1)]
 
-        for node in self.nodes:
+        for node in active_nodes:
             levels[depth[node]].append(node)
 
         return levels
