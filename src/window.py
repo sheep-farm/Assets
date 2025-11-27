@@ -252,6 +252,12 @@ class AssetsWindow(Adw.ApplicationWindow):
                     self.canvas.nodes = nodes
                     self.canvas.connections = connections
                     self.current_file = filepath
+
+                    # Pre-calculate port positions for all nodes
+                    # This ensures connections can be drawn immediately
+                    for node in nodes:
+                        node._calculate_port_positions()
+
                     self.canvas.queue_draw()
 
                     print(f"✓ Graph loaded: {filepath}")

@@ -240,6 +240,24 @@ class Node:
             # Guardar posição
             self.output_ports.append((port_x, port_y))
 
+    def _calculate_port_positions(self):
+        """Calcula posições das portas sem desenhar (útil para pré-cálculo ao carregar arquivos)"""
+        # Calcular posições das portas de entrada
+        self.input_ports.clear()
+        for i in range(self.num_inputs):
+            port_y = (self.y + self.HEIGHT_HEADER + self.PADDING +
+                     i * self.HEIGHT_PORT + self.HEIGHT_PORT / 2)
+            port_x = self.x
+            self.input_ports.append((port_x, port_y))
+
+        # Calcular posições das portas de saída
+        self.output_ports.clear()
+        for i in range(self.num_outputs):
+            port_y = (self.y + self.HEIGHT_HEADER + self.PADDING +
+                     i * self.HEIGHT_PORT + self.HEIGHT_PORT / 2)
+            port_x = self.x + self.WIDTH
+            self.output_ports.append((port_x, port_y))
+
     def _draw_border(self, context):
         """Desenha borda ao redor do nó inteiro (muda com hover/seleção)"""
         # Escolher cor e espessura baseado no estado
