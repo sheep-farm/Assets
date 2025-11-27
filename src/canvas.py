@@ -1250,12 +1250,15 @@ class AssetsCanvas(Gtk.DrawingArea):
             context.line_to(end_x, y)
         context.stroke()
 
+        # Desenhar conexões não selecionadas primeiro (atrás dos nós)
+        self._draw_connections(context, selected_only=False)
+
         # Desenhar todos os nós
         for node in self.nodes:
             node.draw(context)
 
-        # Desenhar conexões
-        self._draw_example_connections(context)
+        # Desenhar conexões selecionadas por cima
+        self._draw_connections(context, selected_only=True)
 
         # Desenhar retângulo de seleção (se estiver selecionando)
         if self.selecting_region:
@@ -1286,12 +1289,25 @@ class AssetsCanvas(Gtk.DrawingArea):
         context.move_to(10, height - 10)
         context.show_text(info_text)
 
-    def _draw_example_connections(self, context):
-        """Desenha todas as conexões armazenadas"""
+    def _draw_connections(self, context, selected_only=False):
+        """
+        Desenha conexões armazenadas
 
+        Args:
+            context: Cairo context
+            selected_only: Se True, desenha apenas conexões selecionadas
+                          Se False, desenha apenas conexões não selecionadas
+        """
         # Desenhar cada conexão da lista
         for connection in self.connections:
             source_node, out_port, target_node, in_port = connection
+            is_selected = (connection == self.selected_connection)
+
+            # Filtrar baseado no modo
+            if selected_only and not is_selected:
+                continue
+            if not selected_only and is_selected:
+                continue
 
             # Pegar posições das portas
             start = source_node.get_output_port_position(out_port)
@@ -1299,18 +1315,18 @@ class AssetsCanvas(Gtk.DrawingArea):
 
             # Desenhar se ambas as portas existem
             if start and end:
-                # Cor diferente se está selecionada
-                if connection == self.selected_connection:
-                    context.set_line_width(4)
+                # Cor e largura diferentes se está selecionada
+                if is_selected:
+                    context.set_line_width(4 / self.zoom_level)
                     context.set_source_rgba(1.0, 0.3, 0.3, 0.9)  # Vermelho para selecionada
                 else:
-                    context.set_line_width(3)
-                    context.set_source_rgba(0.3, 0.6, 0.9, 0.8)  # Azul normal
+                    context.set_line_width(3 / self.zoom_level)
+                    context.set_source_rgba(0.3, 0.6, 0.9, 0.6)  # Azul normal, mais transparente
 
                 self._draw_connection(context, start, end)
 
-        # Se está criando uma conexão, desenhar linha temporária
-        if self.creating_connection and self.connection_start_node:
+        # Se está criando uma conexão, desenhar linha temporária (sempre por cima)
+        if selected_only and self.creating_connection and self.connection_start_node:
             start = self.connection_start_node.get_output_port_position(self.connection_start_port)
             if start:
                 # Linha temporária em cor diferente (verde)
