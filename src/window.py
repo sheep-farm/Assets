@@ -552,26 +552,32 @@ class AssetsWindow(Adw.ApplicationWindow):
         """When clicking a node template in the library"""
         from .node_library import create_node_from_template
 
+        # Pegar canvas da aba atual
+        if not self.current_tab:
+            return
+
+        canvas = self.current_tab.canvas
+
         # Create node at center of visible canvas
-        center_x = (400 - self.canvas.pan_offset_x) / self.canvas.zoom_level
-        center_y = (300 - self.canvas.pan_offset_y) / self.canvas.zoom_level
+        center_x = (400 - canvas.pan_offset_x) / canvas.zoom_level
+        center_y = (300 - canvas.pan_offset_y) / canvas.zoom_level
 
         new_node = create_node_from_template(template, center_x, center_y)
-        self.canvas.nodes.append(new_node)
+        canvas.nodes.append(new_node)
 
         # Select the new node
-        for node in self.canvas.nodes:
+        for node in canvas.nodes:
             node.set_selected(False)
         new_node.set_selected(True)
-        self.canvas.focused_node_index = len(self.canvas.nodes) - 1
+        canvas.focused_node_index = len(canvas.nodes) - 1
 
         # Update canvas size
-        self.canvas._update_canvas_size()
+        canvas._update_canvas_size()
 
-        self.canvas.queue_draw()
+        canvas.queue_draw()
 
         # Return focus to canvas for keyboard shortcuts
-        self.canvas.grab_focus()
+        canvas.grab_focus()
 
     def _on_search_changed(self, search_entry):
         """Search nodes as user types"""
@@ -634,12 +640,18 @@ class AssetsWindow(Adw.ApplicationWindow):
         """When clicking Run button - execute graph in background"""
         import threading
 
+        # Pegar o projeto/canvas da aba atual
+        current_project = self.current_tab
+        if not current_project:
+            print("❌ No active project")
+            return
+
         # Disable button during execution
         button.set_sensitive(False)
 
         def run_in_background():
-            # Execute the graph
-            success = self.canvas.execute_graph()
+            # Execute the graph da aba atual
+            success = current_project.canvas.execute_graph()
 
             # Re-enable button on main thread
             from gi.repository import GLib

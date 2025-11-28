@@ -4,7 +4,7 @@ node_dialogs.py - Dialogs para edição de nós (Adwaita-style)
 """
 
 import gi
-from gi.repository import Gtk, Adw, Gio
+from gi.repository import Gtk, Adw, Gio, GtkSource
 
 
 class CodeEditorDialog(Adw.Window):
@@ -56,23 +56,42 @@ class CodeEditorDialog(Adw.Window):
         banner.add_css_class("inline")
         content.append(banner)
 
-        # Editor de código com TextView
+        # Editor de código com GtkSourceView
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         scrolled.set_hexpand(True)
         scrolled.add_css_class("card")
 
-        # TextView simples
-        self.text_view = Gtk.TextView()
+        # SourceView com syntax highlighting
+        self.text_view = GtkSource.View()
         self.text_buffer = self.text_view.get_buffer()
 
         # Configurações do editor
+        self.text_view.set_show_line_numbers(True)
+        self.text_view.set_highlight_current_line(True)
+        self.text_view.set_auto_indent(True)
+        self.text_view.set_indent_on_tab(True)
+        self.text_view.set_tab_width(4)
+        self.text_view.set_insert_spaces_instead_of_tabs(True)
         self.text_view.set_monospace(True)
         self.text_view.set_top_margin(12)
         self.text_view.set_bottom_margin(12)
         self.text_view.set_left_margin(12)
         self.text_view.set_right_margin(12)
         self.text_view.set_wrap_mode(Gtk.WrapMode.NONE)
+
+        # Configurar linguagem Python
+        lang_manager = GtkSource.LanguageManager.get_default()
+        python_lang = lang_manager.get_language('python3')
+        self.text_buffer.set_language(python_lang)
+
+        # Configurar style scheme
+        style_manager = GtkSource.StyleSchemeManager.get_default()
+        scheme = style_manager.get_scheme('Adwaita-dark')
+        if scheme is None:
+            scheme = style_manager.get_scheme('classic')
+        if scheme:
+            self.text_buffer.set_style_scheme(scheme)
 
         # Definir código atual
         self.text_buffer.set_text(node.code)
@@ -315,14 +334,36 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
         scrolled.set_hexpand(True)
         scrolled.set_min_content_height(300)
 
-        self.code_view = Gtk.TextView()
+        self.code_view = GtkSource.View()
         self.code_buffer = self.code_view.get_buffer()
+
+        # Configurações do editor
+        self.code_view.set_show_line_numbers(True)
+        self.code_view.set_highlight_current_line(True)
+        self.code_view.set_auto_indent(True)
+        self.code_view.set_indent_on_tab(True)
+        self.code_view.set_tab_width(4)
+        self.code_view.set_insert_spaces_instead_of_tabs(True)
         self.code_view.set_monospace(True)
         self.code_view.set_wrap_mode(Gtk.WrapMode.WORD)
         self.code_view.set_top_margin(12)
         self.code_view.set_bottom_margin(12)
         self.code_view.set_left_margin(12)
         self.code_view.set_right_margin(12)
+
+        # Configurar linguagem Python
+        lang_manager = GtkSource.LanguageManager.get_default()
+        python_lang = lang_manager.get_language('python3')
+        self.code_buffer.set_language(python_lang)
+
+        # Configurar style scheme
+        style_manager = GtkSource.StyleSchemeManager.get_default()
+        scheme = style_manager.get_scheme('Adwaita-dark')
+        if scheme is None:
+            scheme = style_manager.get_scheme('classic')
+        if scheme:
+            self.code_buffer.set_style_scheme(scheme)
+
         self.code_buffer.set_text(self.node.code)
 
         scrolled.set_child(self.code_view)
