@@ -32,7 +32,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.dragging_node = None
         self.hovered_node = None
         self.focused_node_index = -1  # Índice do nó com foco (-1 = nenhum)
-        self.clipboard_node = None  # Nó copiado para clipboard
 
         # Estado para criar conexões
         self.creating_connection = False  # Está criando uma conexão?
@@ -522,17 +521,22 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Verificar se Ctrl está pressionado
         ctrl_pressed = state & Gdk.ModifierType.CONTROL_MASK
 
-        # Ctrl+C - Copiar nó focado
+        # Ctrl+A - Selecionar todos os nós
+        if ctrl_pressed and keyval == Gdk.KEY_a:
+            self._select_all_nodes()
+            return True
+
+        # Ctrl+C - Copiar nós selecionados
         if ctrl_pressed and keyval == Gdk.KEY_c:
             self._copy_focused_node()
             return True
 
-        # Ctrl+V - Colar nó do clipboard
+        # Ctrl+V - Colar nós do clipboard
         if ctrl_pressed and keyval == Gdk.KEY_v:
             self._paste_node()
             return True
 
-        # Ctrl+D - Duplicar nó focado
+        # Ctrl+D - Duplicar nós selecionados
         if ctrl_pressed and keyval == Gdk.KEY_d:
             self._duplicate_focused_node()
             return True
@@ -699,51 +703,121 @@ class AssetsCanvas(Gtk.DrawingArea):
             self.selected_connection = None
             self.queue_draw()
 
+    def _select_all_nodes(self):
+        """Seleciona todos os nós (Ctrl+A)"""
+        if not self.nodes:
+            return
+
+        # Selecionar todos os nós
+        for node in self.nodes:
+            node.set_selected(True)
+
+        # Atualizar foco para o último nó
+        self.focused_node_index = len(self.nodes) - 1
+
+        self.queue_draw()
+        #print(f"✓ Selecionados {len(self.nodes)} nó(s)")
+
     def _copy_focused_node(self):
-        """Copia o nó focado para o clipboard (Ctrl+C)"""
-        if 0 <= self.focused_node_index < len(self.nodes):
-            self.clipboard_node = self.nodes[self.focused_node_index]
-            #print(f"📋 Copiado: {self.clipboard_node.title}")
-        #else:
+        """Copia os nós selecionados para o clipboard global (Ctrl+C)"""
+        window = self.get_root()
+        if not window:
+            return
+
+        # Pegar todos os nós selecionados
+        selected_nodes = [node for node in self.nodes if node.selected]
+
+        if not selected_nodes:
             #print("⚠️  Nenhum nó selecionado para copiar")
+            return
+
+        # Copiar nós
+        window.clipboard_nodes = selected_nodes
+
+        # Copiar conexões entre nós selecionados
+        window.clipboard_connections = []
+        for conn in self.connections:
+            source_node, source_port, target_node, target_port = conn
+            if source_node in selected_nodes and target_node in selected_nodes:
+                window.clipboard_connections.append(conn)
+
+        #print(f"📋 Copiado: {len(selected_nodes)} nó(s) e {len(window.clipboard_connections)} conexão(ões)")
 
     def _paste_node(self):
-        """Cola o nó do clipboard (Ctrl+V)"""
-        if self.clipboard_node is None:
+        """Cola os nós do clipboard global (Ctrl+V)"""
+        window = self.get_root()
+        if not window or not window.clipboard_nodes:
             #print("⚠️  Clipboard vazio")
             return
 
-        # Criar novo nó com offset de posição
-        offset = 30  # Deslocamento para não colar em cima
-        new_node = Node(
-            self.clipboard_node.x + offset,
-            self.clipboard_node.y + offset,
-            f"{self.clipboard_node.title} (cópia)",
-            num_inputs=self.clipboard_node.num_inputs,
-            num_outputs=self.clipboard_node.num_outputs
-        )
+        # Deslocamento para não colar em cima
+        offset = 30
 
-        # Copiar o código do nó original
-        new_node.code = self.clipboard_node.code
+        # Verificar se estamos colando no mesmo projeto (adicionar "(cópia)" no título)
+        is_same_project = any(node in self.nodes for node in window.clipboard_nodes)
 
-        # Adicionar à lista
-        self.nodes.append(new_node)
+        # Mapa de nós antigos -> novos para recriar conexões
+        node_map = {}
+        new_nodes = []
 
-        # NOTA: Não copiamos as conexões porque elas referenciam outros nós
-        # Para copiar conexões seria necessário copiar também os nós conectados
+        # Criar cópias de todos os nós
+        for clipboard_node in window.clipboard_nodes:
+            # Determinar título: adicionar "(cópia)" apenas se for no mesmo projeto
+            if is_same_project:
+                title = f"{clipboard_node.title} (cópia)"
+            else:
+                title = clipboard_node.title
+
+            new_node = Node(
+                clipboard_node.x + offset,
+                clipboard_node.y + offset,
+                title,
+                num_inputs=clipboard_node.num_inputs,
+                num_outputs=clipboard_node.num_outputs
+            )
+
+            # Copiar todas as propriedades do nó original
+            new_node.code = clipboard_node.code
+            new_node.description = clipboard_node.description
+            new_node.author = clipboard_node.author
+            new_node.version = clipboard_node.version
+            new_node.tags = clipboard_node.tags.copy() if clipboard_node.tags else []
+            new_node.category = clipboard_node.category
+            new_node.custom_color = clipboard_node.custom_color
+
+            # Adicionar à lista
+            self.nodes.append(new_node)
+            new_nodes.append(new_node)
+
+            # Mapear nó antigo -> novo
+            node_map[clipboard_node] = new_node
+
+        # Recriar conexões entre os nós colados
+        for conn in window.clipboard_connections:
+            source_node, source_port, target_node, target_port = conn
+
+            # Verificar se ambos os nós estão no mapa
+            if source_node in node_map and target_node in node_map:
+                new_source = node_map[source_node]
+                new_target = node_map[target_node]
+
+                # Criar nova conexão
+                new_conn = (new_source, source_port, new_target, target_port)
+                self.connections.append(new_conn)
 
         # Desselecionar todos
         for node in self.nodes:
             node.set_selected(False)
 
-        # Selecionar o novo
-        new_node.set_selected(True)
+        # Selecionar os novos nós
+        for new_node in new_nodes:
+            new_node.set_selected(True)
 
-        # Atualizar foco para o índice correto do novo nó
-        self.focused_node_index = self.nodes.index(new_node)
+        # Atualizar foco para o último nó colado
+        if new_nodes:
+            self.focused_node_index = self.nodes.index(new_nodes[-1])
+            #print(f"📌 Colado: {len(new_nodes)} nó(s) e {len(window.clipboard_connections)} conexão(ões)")
 
-        #print(f"📌 Colado: {new_node.title} em ({new_node.x:.0f}, {new_node.y:.0f})")
-        #print(f"   Foco atualizado para índice {self.focused_node_index}")
         self.queue_draw()
 
     def _duplicate_focused_node(self):

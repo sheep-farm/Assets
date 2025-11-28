@@ -48,6 +48,10 @@ class AssetsWindow(Adw.ApplicationWindow):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        # Clipboard global para copiar entre projetos (lista de nós)
+        self.clipboard_nodes = []
+        self.clipboard_connections = []  # Conexões entre nós copiados
+
         # Estado para controle do painel de resultado
         self.result_panel_visible = True
         self.result_panel_height = 200
@@ -230,11 +234,35 @@ class AssetsWindow(Adw.ApplicationWindow):
         save_as_action.connect("activate", self._on_save_as)
         self.add_action(save_as_action)
 
+        # Close Tab
+        close_tab_action = Gio.SimpleAction.new("close-tab", None)
+        close_tab_action.connect("activate", self.on_close_tab)
+        self.add_action(close_tab_action)
+
+        # Configurar atalhos de teclado
+        app = self.get_application()
+        if app:
+            app.set_accels_for_action("win.new", ["<Ctrl>n"])
+            app.set_accels_for_action("win.save", ["<Ctrl>s"])
+            app.set_accels_for_action("win.close-tab", ["<Ctrl>w"])
+
 
     def on_new(self, action, param):
         """Handle New action - creates a new tab"""
         self._create_new_tab()
         print("✓ New graph created in new tab")
+
+    def on_close_tab(self, action, param):
+        """Handle Close Tab action - fecha a aba atual"""
+        current_page = self.tab_view.get_selected_page()
+        if current_page:
+            # Se só tem uma aba, cria uma nova antes de fechar
+            if self.tab_view.get_n_pages() == 1:
+                self._create_new_tab()
+
+            # Fecha a aba atual
+            self.tab_view.close_page(current_page)
+            print("✓ Tab closed")
 
     def on_open(self, action, param):
         """Handle Open action"""

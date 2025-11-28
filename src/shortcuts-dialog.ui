@@ -4,16 +4,94 @@
     <child>
       <object class="AdwShortcutsSection">
         <property name="title" translatable="yes">Shortcuts</property>
+
         <child>
-          <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes" context="shortcut window">Show Shortcuts</property>
-            <property name="action-name">app.shortcuts</property>
+          <object class="AdwShortcutsGroup">
+            <property name="title" translatable="yes">Project</property>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">New Project</property>
+                <property name="action-name">win.new</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Save</property>
+                <property name="action-name">win.save</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Close Tab</property>
+                <property name="action-name">win.close-tab</property>
+              </object>
+            </child>
           </object>
         </child>
+
         <child>
-          <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes" context="shortcut window">Quit</property>
-            <property name="action-name">app.quit</property>
+          <object class="AdwShortcutsGroup">
+            <property name="title" translatable="yes">Canvas</property>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Select All</property>
+                <property name="accelerator">&lt;Ctrl&gt;a</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Copy</property>
+                <property name="accelerator">&lt;Ctrl&gt;c</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Paste</property>
+                <property name="accelerator">&lt;Ctrl&gt;v</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Duplicate</property>
+                <property name="accelerator">&lt;Ctrl&gt;d</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Delete</property>
+                <property name="accelerator">Delete</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Undo</property>
+                <property name="accelerator">&lt;Ctrl&gt;z</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Redo</property>
+                <property name="accelerator">&lt;Ctrl&gt;&lt;Shift&gt;z</property>
+              </object>
+            </child>
+          </object>
+        </child>
+
+        <child>
+          <object class="AdwShortcutsGroup">
+            <property name="title" translatable="yes">General</property>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Show Shortcuts</property>
+                <property name="action-name">app.shortcuts</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwShortcutsItem">
+                <property name="title" translatable="yes" context="shortcut window">Quit</property>
+                <property name="action-name">app.quit</property>
+              </object>
+            </child>
           </object>
         </child>
       </object>
