@@ -17,10 +17,10 @@ class ProjectTab:
         self.current_file = None
         self.is_modified = False
 
-        # Criar container principal (vertical box para canvas + output)
-        self.main_paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
-        self.main_paned.set_vexpand(True)
-        self.main_paned.set_hexpand(True)
+        # Container principal - box vertical com toolbar + paned
+        self.main_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.main_container.set_vexpand(True)
+        self.main_container.set_hexpand(True)
 
         # Criar canvas
         self.canvas = AssetsCanvas()
@@ -37,20 +37,53 @@ class ProjectTab:
         self.output_panel.set_vexpand(True)
         self.output_panel.set_hexpand(True)
 
-        # Adicionar ao paned
+        # Criar paned para canvas + output
+        self.main_paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        self.main_paned.set_vexpand(True)
+        self.main_paned.set_hexpand(True)
         self.main_paned.set_start_child(self.scrolled_window)
         self.main_paned.set_end_child(self.output_panel)
         self.main_paned.set_resize_start_child(True)
         self.main_paned.set_resize_end_child(False)
         self.main_paned.set_shrink_start_child(False)
         self.main_paned.set_shrink_end_child(False)
-
-        # Posição inicial do divisor (200px para output)
         self.main_paned.set_position(400)
+
+        # Criar toolbar com toggle button
+        self.toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.toolbar.set_spacing(6)
+        self.toolbar.set_margin_start(6)
+        self.toolbar.set_margin_end(6)
+        self.toolbar.set_margin_top(3)
+        self.toolbar.set_margin_bottom(3)
+
+        # Label vazio (expande para empurrar toggle para direita)
+        spacer = Gtk.Label()
+        spacer.set_hexpand(True)
+        self.toolbar.append(spacer)
+
+        # Toggle button para result area
+        self.result_toggle = Gtk.ToggleButton()
+        self.result_toggle.set_icon_name("view-top-pane-symbolic")
+        self.result_toggle.set_tooltip_text("Toggle Result Area")
+        self.result_toggle.set_active(True)
+        self.result_toggle.connect("toggled", self._on_result_toggle)
+        self.toolbar.append(self.result_toggle)
+
+        # Adicionar paned e toolbar ao container
+        self.main_container.append(self.main_paned)
+        #self.main_container.append(self.toolbar)
 
     def get_widget(self):
         """Retorna o widget principal da aba"""
-        return self.main_paned
+        return self.main_container
+
+    def _on_result_toggle(self, button):
+        """Toggle visibility da result area"""
+        if button.get_active():
+            self.output_panel.set_visible(True)
+        else:
+            self.output_panel.set_visible(False)
 
     def get_title(self):
         """Retorna o título para a aba"""

@@ -25,32 +25,13 @@ from .canvas import AssetsCanvas
 from .output_panel import OutputPanel
 from .project_tab import ProjectTab
 
-# Carregar template: GResource ou arquivo local
-_GRESOURCE_PATH = '/com/github/sheep/farm/assets/window.ui'
-_UI_FILE = Path(__file__).parent / "window.ui"
-
-# Tentar GResource primeiro, fallback para arquivo local
-_use_gresource = False
-try:
-    Gio.resources_lookup_data(_GRESOURCE_PATH, Gio.ResourceLookupFlags.NONE)
-    _use_gresource = True
-except:
-    pass
-
-# Aplicar decorador apropriado
-if _use_gresource:
-    _template_decorator = Gtk.Template(resource_path=_GRESOURCE_PATH)
-else:
-    _template_decorator = Gtk.Template(filename=str(_UI_FILE))
-
-@_template_decorator
+@Gtk.Template(resource_path='/com/github/sheep/farm/assets/window.ui')
 class AssetsWindow(Adw.ApplicationWindow):
     __gtype_name__ = 'AssetsWindow'
 
     # Template widgets
     sidebar_toggle = Gtk.Template.Child()
     run_button = Gtk.Template.Child()
-    result_toggle = Gtk.Template.Child()
     toast_overlay = Gtk.Template.Child()
     split_view = Gtk.Template.Child()
     toolbar_box = Gtk.Template.Child()
@@ -81,7 +62,6 @@ class AssetsWindow(Adw.ApplicationWindow):
 
         # Conectar signals dos botões principais
         self.run_button.connect("clicked", self._on_run_graph)
-        self.result_toggle.connect("toggled", self._on_result_toggle)
 
         # Popular lista inicial de nodes
         self._populate_node_list()
@@ -466,19 +446,6 @@ class AssetsWindow(Adw.ApplicationWindow):
 
             print(f"✓ Saved: {filepath}")
 
-    def _on_result_toggle(self, button):
-        """Toggle result area visibility"""
-        if button.get_active():
-            # Mostrar: restaurar altura
-            new_position = self.get_height() - self.result_panel_height
-            self.main_paned.set_position(max(100, new_position))
-            self.result_panel_visible = True
-        else:
-            # Esconder: salvar altura atual e colapsar
-            current_pos = self.main_paned.get_position()
-            self.result_panel_height = self.get_height() - current_pos
-            self.main_paned.set_position(self.get_height() - 1)
-            self.result_panel_visible = False
 
     def _populate_node_list(self, nodes=None):
         """Populate node list in sidebar"""

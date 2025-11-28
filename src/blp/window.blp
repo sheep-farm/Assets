@@ -95,31 +95,8 @@ template $AssetsWindow : Adw.ApplicationWindow {
           }
         }
 
-        [bottom]
-        Box status_bar {
-          orientation: horizontal;
-          spacing: 6;
-          margin-start: 6;
-          margin-end: 6;
-          margin-top: 3;
-          margin-bottom: 3;
-
-          Label {
-            label: "";
-            hexpand: true;
-          }
-
-          ToggleButton result_toggle {
-            icon-name: "view-top-pane-symbolic";
-            tooltip-text: "Toggle Result Area";
-            active: true;
-          }
-        }
-
-        content: Paned main_paned {
+        content: Box main_paned {
           orientation: vertical;
-          position: 500;
-          wide-handle: true;
 
           [start]
           Box canvas_box {
