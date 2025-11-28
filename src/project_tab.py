@@ -49,41 +49,12 @@ class ProjectTab:
         self.main_paned.set_shrink_end_child(False)
         self.main_paned.set_position(400)
 
-        # Criar toolbar com toggle button
-        self.toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        self.toolbar.set_spacing(6)
-        self.toolbar.set_margin_start(6)
-        self.toolbar.set_margin_end(6)
-        self.toolbar.set_margin_top(3)
-        self.toolbar.set_margin_bottom(3)
-
-        # Label vazio (expande para empurrar toggle para direita)
-        spacer = Gtk.Label()
-        spacer.set_hexpand(True)
-        self.toolbar.append(spacer)
-
-        # Toggle button para result area
-        self.result_toggle = Gtk.ToggleButton()
-        self.result_toggle.set_icon_name("view-top-pane-symbolic")
-        self.result_toggle.set_tooltip_text("Toggle Result Area")
-        self.result_toggle.set_active(True)
-        self.result_toggle.connect("toggled", self._on_result_toggle)
-        self.toolbar.append(self.result_toggle)
-
-        # Adicionar paned e toolbar ao container
+        # Adicionar paned ao container
         self.main_container.append(self.main_paned)
-        #self.main_container.append(self.toolbar)
 
     def get_widget(self):
         """Retorna o widget principal da aba"""
         return self.main_container
-
-    def _on_result_toggle(self, button):
-        """Toggle visibility da result area"""
-        if button.get_active():
-            self.output_panel.set_visible(True)
-        else:
-            self.output_panel.set_visible(False)
 
     def get_title(self):
         """Retorna o título para a aba"""

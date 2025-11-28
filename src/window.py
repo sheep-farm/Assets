@@ -32,6 +32,7 @@ class AssetsWindow(Adw.ApplicationWindow):
     # Template widgets
     sidebar_toggle = Gtk.Template.Child()
     run_button = Gtk.Template.Child()
+    # result_toggle = Gtk.Template.Child()
     toast_overlay = Gtk.Template.Child()
     split_view = Gtk.Template.Child()
     toolbar_box = Gtk.Template.Child()
@@ -40,9 +41,9 @@ class AssetsWindow(Adw.ApplicationWindow):
     import_button = Gtk.Template.Child()
     export_button = Gtk.Template.Child()
     node_list = Gtk.Template.Child()
-    main_paned = Gtk.Template.Child()
+    #main_paned = Gtk.Template.Child()
     canvas_box = Gtk.Template.Child()
-    result_box = Gtk.Template.Child()
+    # result_box = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -62,6 +63,7 @@ class AssetsWindow(Adw.ApplicationWindow):
 
         # Conectar signals dos botões principais
         self.run_button.connect("clicked", self._on_run_graph)
+        # self.result_toggle.connect("toggled", self._on_result_toggle)
 
         # Popular lista inicial de nodes
         self._populate_node_list()
@@ -658,6 +660,13 @@ class AssetsWindow(Adw.ApplicationWindow):
         # Start thread
         thread = threading.Thread(target=run_in_background, daemon=True)
         thread.start()
+
+    def _on_result_toggle(self, button):
+        """Toggle visibility of result area"""
+        if button.get_active():
+            self.result_box.set_visible(True)
+        else:
+            self.result_box.set_visible(False)
 
     def _recreate_library_panel(self):
         """Recreate library panel (after adding new nodes)"""

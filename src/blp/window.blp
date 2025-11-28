@@ -87,6 +87,13 @@ template $AssetsWindow : Adw.ApplicationWindow {
             menu-model: primary_menu;
           }
 
+          // [end]
+          // ToggleButton result_toggle {
+          //   icon-name: "view-top-pane-symbolic";
+          //   tooltip-text: "Toggle Result Area";
+          //   active: true;
+          // }
+
           [end]
           Button run_button {
             icon-name: "media-playback-start-symbolic";
@@ -95,18 +102,19 @@ template $AssetsWindow : Adw.ApplicationWindow {
           }
         }
 
-        content: Box main_paned {
+        content: Box {
           orientation: vertical;
+          vexpand: true;
 
-          [start]
           Box canvas_box {
             orientation: vertical;
+            vexpand: true;
           }
 
-          [end]
-          Box result_box {
-            orientation: vertical;
-          }
+          // Box result_box {
+          //   orientation: vertical;
+          //   vexpand: true;
+          // }
         };
       };
     };
