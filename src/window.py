@@ -25,8 +25,25 @@ from .canvas import AssetsCanvas
 from .output_panel import OutputPanel
 from .project_tab import ProjectTab
 
+# Carregar template: GResource ou arquivo local
+_GRESOURCE_PATH = '/com/github/sheep/farm/assets/window.ui'
+_UI_FILE = Path(__file__).parent / "window.ui"
 
-@Gtk.Template(resource_path='/com/github/sheep/farm/assets/window.ui')
+# Tentar GResource primeiro, fallback para arquivo local
+_use_gresource = False
+try:
+    Gio.resources_lookup_data(_GRESOURCE_PATH, Gio.ResourceLookupFlags.NONE)
+    _use_gresource = True
+except:
+    pass
+
+# Aplicar decorador apropriado
+if _use_gresource:
+    _template_decorator = Gtk.Template(resource_path=_GRESOURCE_PATH)
+else:
+    _template_decorator = Gtk.Template(filename=str(_UI_FILE))
+
+@_template_decorator
 class AssetsWindow(Adw.ApplicationWindow):
     __gtype_name__ = 'AssetsWindow'
 
@@ -262,6 +279,7 @@ class AssetsWindow(Adw.ApplicationWindow):
             if file:
                 from .graph_io import GraphSerializer
                 from .node import Node
+                from pathlib import Path
                 filepath = file.get_path()
 
                 # Load graph data (returns dict with raw data)
@@ -294,10 +312,26 @@ class AssetsWindow(Adw.ApplicationWindow):
                         else:
                             print(f"⚠️  Invalid connection ignored: {src_id} -> {dst_id}")
 
-                    # Update canvas
-                    self.canvas.nodes = nodes
-                    self.canvas.connections = connections
-                    self.current_file = filepath
+                    # Decidir se cria nova aba ou usa a atual
+                    current_tab = self.current_tab
+                    if current_tab and len(current_tab.canvas.nodes) == 0 and not current_tab.current_file:
+                        # Aba atual está vazia, usar ela
+                        project = current_tab
+                    else:
+                        # Criar nova aba
+                        filename = Path(filepath).stem
+                        project = self._create_new_tab(title=filename, file_path=filepath)
+                        # Selecionar a nova aba
+                        page = self.tab_view.get_selected_page()
+                        n_pages = self.tab_view.get_n_pages()
+                        if n_pages > 0:
+                            new_page = self.tab_view.get_nth_page(n_pages - 1)
+                            self.tab_view.set_selected_page(new_page)
+
+                    # Update canvas do projeto
+                    project.canvas.nodes = nodes
+                    project.canvas.connections = connections
+                    project.current_file = filepath
 
                     # Pre-calculate port positions for all nodes
                     # This ensures connections can be drawn immediately
@@ -308,17 +342,17 @@ class AssetsWindow(Adw.ApplicationWindow):
                     view_state = graph_data.get("view_state")
                     if view_state:
                         # Restaurar zoom
-                        self.canvas.zoom_level = view_state.get("zoom", 1.0)
+                        project.canvas.zoom_level = view_state.get("zoom", 1.0)
 
                         # Update canvas size based on nodes and zoom
-                        self.canvas._update_canvas_size()
+                        project.canvas._update_canvas_size()
 
                         # Restaurar posição do scroll após um pequeno delay
                         # (necessário para que os adjustments sejam configurados)
                         from gi.repository import GLib
                         def restore_scroll():
-                            hadj = self.scrolled_window.get_hadjustment()
-                            vadj = self.scrolled_window.get_vadjustment()
+                            hadj = project.scrolled_window.get_hadjustment()
+                            vadj = project.scrolled_window.get_vadjustment()
                             if hadj:
                                 hadj.set_value(view_state.get("scroll_x", 0))
                             if vadj:
@@ -327,9 +361,15 @@ class AssetsWindow(Adw.ApplicationWindow):
                         GLib.timeout_add(100, restore_scroll)
                     else:
                         # Update canvas size based on nodes and zoom
-                        self.canvas._update_canvas_size()
+                        project.canvas._update_canvas_size()
 
-                    self.canvas.queue_draw()
+                    project.canvas.queue_draw()
+
+                    # Atualizar título da aba
+                    current_page = self.tab_view.get_selected_page()
+                    if current_page:
+                        current_page.set_title(project.get_title())
+                        current_page.set_tooltip(project.get_tooltip())
 
                     print(f"✓ Graph loaded: {filepath}")
                     print(f"  - {len(nodes)} nodes")
@@ -347,9 +387,13 @@ class AssetsWindow(Adw.ApplicationWindow):
                 self.toast_overlay.add_toast(toast)
 
     def on_save(self, action, param):
-        """Handle Save action"""
-        if self.current_file:
-            self._save_to_file(self.current_file)
+        """Handle Save action - salva a aba atual"""
+        project = self.current_tab
+        if not project:
+            return
+
+        if project.current_file:
+            self._save_to_file(project.current_file)
         else:
             self._on_save_as(action, param)
 
@@ -386,28 +430,40 @@ class AssetsWindow(Adw.ApplicationWindow):
                 print(f"❌ Error saving: {e}")
 
     def _save_to_file(self, filepath):
-        """Save graph to file"""
+        """Save graph to file - salva o projeto da aba atual"""
         from .graph_io import GraphSerializer
+        from pathlib import Path
 
-        # Capturar estado visual atual
-        hadj = self.scrolled_window.get_hadjustment()
-        vadj = self.scrolled_window.get_vadjustment()
+        project = self.current_tab
+        if not project:
+            return
+
+        # Capturar estado visual atual do projeto
+        hadj = project.scrolled_window.get_hadjustment()
+        vadj = project.scrolled_window.get_vadjustment()
 
         view_state = {
-            "zoom": self.canvas.zoom_level,
+            "zoom": project.canvas.zoom_level,
             "scroll_x": hadj.get_value() if hadj else 0,
             "scroll_y": vadj.get_value() if vadj else 0
         }
 
         success = GraphSerializer.save_graph(
-            self.canvas.nodes,
-            self.canvas.connections,
+            project.canvas.nodes,
+            project.canvas.connections,
             filepath,
             view_state
         )
 
         if success:
-            self.current_file = filepath
+            project.current_file = filepath
+
+            # Atualizar título da aba
+            current_page = self.tab_view.get_selected_page()
+            if current_page:
+                current_page.set_title(project.get_title())
+                current_page.set_tooltip(project.get_tooltip())
+
             print(f"✓ Saved: {filepath}")
 
     def _on_result_toggle(self, button):

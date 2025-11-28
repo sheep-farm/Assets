@@ -4,8 +4,7 @@ node_dialogs.py - Dialogs para edição de nós (Adwaita-style)
 """
 
 import gi
-gi.require_version('GtkSource', '5')
-from gi.repository import Gtk, Adw, Gio, GtkSource
+from gi.repository import Gtk, Adw, Gio
 
 
 class CodeEditorDialog(Adw.Window):
@@ -57,38 +56,23 @@ class CodeEditorDialog(Adw.Window):
         banner.add_css_class("inline")
         content.append(banner)
 
-        # Usar GtkSourceView com syntax highlighting
+        # Editor de código com TextView
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         scrolled.set_hexpand(True)
         scrolled.add_css_class("card")
 
-        # SourceView (editor com syntax highlighting)
-        self.text_view = GtkSource.View()
+        # TextView simples
+        self.text_view = Gtk.TextView()
         self.text_buffer = self.text_view.get_buffer()
 
-        # Configurar Python language
-        lang_manager = GtkSource.LanguageManager.get_default()
-        python_lang = lang_manager.get_language("python3")
-        if python_lang:
-            self.text_buffer.set_language(python_lang)
-
-        # Configurar scheme (tema)
-        style_manager = GtkSource.StyleSchemeManager.get_default()
-        scheme = style_manager.get_scheme("Adwaita")  # Tema Adwaita
-        if scheme:
-            self.text_buffer.set_style_scheme(scheme)
-
         # Configurações do editor
-        self.text_view.set_show_line_numbers(True)
-        self.text_view.set_auto_indent(True)
-        self.text_view.set_indent_width(4)
-        self.text_view.set_insert_spaces_instead_of_tabs(True)
         self.text_view.set_monospace(True)
         self.text_view.set_top_margin(12)
         self.text_view.set_bottom_margin(12)
         self.text_view.set_left_margin(12)
         self.text_view.set_right_margin(12)
+        self.text_view.set_wrap_mode(Gtk.WrapMode.NONE)
 
         # Definir código atual
         self.text_buffer.set_text(node.code)
