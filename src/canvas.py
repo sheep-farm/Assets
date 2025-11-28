@@ -743,6 +743,37 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         #print(f"📋 Copiado: {len(selected_nodes)} nó(s) e {len(window.clipboard_connections)} conexão(ões)")
 
+    def _are_types_compatible(self, source_type, target_type):
+        """
+        Verifica se dois tipos de portas são compatíveis para conexão.
+
+        Args:
+            source_type: Tipo da porta de saída
+            target_type: Tipo da porta de entrada
+
+        Returns:
+            bool: True se compatíveis
+        """
+        # 'any' aceita qualquer tipo
+        if source_type == 'any' or target_type == 'any':
+            return True
+
+        # Mesmos tipos são compatíveis
+        if source_type == target_type:
+            return True
+
+        # Regras especiais de compatibilidade
+        # int pode ser usado como float
+        if source_type == 'int' and target_type == 'float':
+            return True
+
+        # array e dataframe podem ser usados onde espera list
+        if source_type in ['array', 'dataframe'] and target_type == 'list':
+            return True
+
+        # Caso contrário, incompatível
+        return False
+
     def _paste_node(self):
         """Cola os nós do clipboard global (Ctrl+V)"""
         window = self.get_root()
@@ -1156,6 +1187,18 @@ class AssetsCanvas(Gtk.DrawingArea):
             return inputs
 
         try:
+            # Validar tipos de entrada ANTES de executar
+            is_valid, error_msg = node.validate_input_types(inputs)
+            if not is_valid:
+                raise TypeError(error_msg)
+
+            # Configurar matplotlib para backend non-interactive (evita warning de GUI)
+            try:
+                import matplotlib
+                matplotlib.use('Agg')  # Backend sem GUI
+            except:
+                pass
+
             # Executar código com profiling
             start_time = time.perf_counter()
 
@@ -1228,20 +1271,31 @@ class AssetsCanvas(Gtk.DrawingArea):
             port_index = self._get_input_port_at(node, x, y)
             if port_index is not None:
                 # Soltou em uma porta de entrada válida!
-                # Criar a conexão
-                new_connection = (
-                    self.connection_start_node,
-                    self.connection_start_port,
-                    node,
-                    port_index
-                )
+                # Validar tipos antes de criar conexão
+                source_node = self.connection_start_node
+                source_port = self.connection_start_port
+                target_node = node
+                target_port = port_index
 
-                # Verificar se já existe essa conexão
-                if new_connection not in self.connections:
-                    self.connections.append(new_connection)
-                    # print(f"✅ Conexão criada: {self.connection_start_node.title}.out[{self.connection_start_port}] → {node.title}.in[{port_index}]")
-                # else:
-                    # print(f"⚠️  Conexão já existe")
+                # Verificar compatibilidade de tipos
+                source_type = source_node.output_types[source_port] if source_port < len(source_node.output_types) else 'any'
+                target_type = target_node.input_types[target_port] if target_port < len(target_node.input_types) else 'any'
+
+                types_compatible = self._are_types_compatible(source_type, target_type)
+
+                if not types_compatible:
+                    print(f"⚠️  Conexão rejeitada: tipo '{source_type}' incompatível com '{target_type}'")
+                    # Não cria a conexão
+                else:
+                    # Criar a conexão
+                    new_connection = (source_node, source_port, target_node, target_port)
+
+                    # Verificar se já existe essa conexão
+                    if new_connection not in self.connections:
+                        self.connections.append(new_connection)
+                        # print(f"✅ Conexão criada: {source_node.title}.out[{source_port}] → {target_node.title}.in[{target_port}]")
+                    # else:
+                        # print(f"⚠️  Conexão já existe")
 
                 # return
 
@@ -1702,6 +1756,18 @@ class AssetsCanvas(Gtk.DrawingArea):
         node.tags = props.get("tags", [])
         node.category = props.get("category", "")
         node.custom_color = props.get("custom_color")
+
+        # Atualizar tipos das portas
+        node.input_types = props.get("input_types", ['any'] * node.num_inputs)
+        node.output_types = props.get("output_types", ['any'] * node.num_outputs)
+
+        # Ajustar listas de tipos se número de portas mudou
+        while len(node.input_types) < node.num_inputs:
+            node.input_types.append('any')
+        while len(node.output_types) < node.num_outputs:
+            node.output_types.append('any')
+        node.input_types = node.input_types[:node.num_inputs]
+        node.output_types = node.output_types[:node.num_outputs]
 
         # Recalcular altura do nó
         max_ports = max(node.num_inputs, node.num_outputs)

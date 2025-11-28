@@ -153,6 +153,8 @@ class PlotsTab(Gtk.Box):
     (inclua o nome do nó no title).
     """
 
+    MAX_PLOTS = 50  # Limite de plots para evitar consumo excessivo de memória
+
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_vexpand(True)
@@ -187,6 +189,20 @@ class PlotsTab(Gtk.Box):
             print("❌ Matplotlib GTK4 backend não disponível. Instale: pip install matplotlib", file=sys.__stdout__)
             return
 
+        # Verificar limite de plots
+        if self.sub.get_n_pages() >= self.MAX_PLOTS:
+            print(f"⚠️  Limite de {self.MAX_PLOTS} plots atingido. Removendo o mais antigo.", file=sys.__stdout__)
+            # Remover primeiro plot (mais antigo)
+            self.sub.remove_page(0)
+            # Fechar e remover figura
+            if self._figures:
+                try:
+                    import matplotlib.pyplot as plt
+                    plt.close(self._figures[0])
+                except:
+                    pass
+                self._figures.pop(0)
+
         # Canvas do matplotlib direto na sub-aba
         canvas = FigureCanvasGTK4Agg(figure)
         canvas.set_size_request(800, 400)
@@ -211,6 +227,8 @@ class TablesTab(Gtk.Box):
     (inclua o nome do nó no title).
     """
 
+    MAX_TABLES = 50  # Limite de tabelas para evitar consumo excessivo de memória
+
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_vexpand(True)
@@ -228,6 +246,12 @@ class TablesTab(Gtk.Box):
             self.sub.remove_page(0)
 
     def add_table(self, dataframe, title="Table"):
+        # Verificar limite de tabelas
+        if self.sub.get_n_pages() >= self.MAX_TABLES:
+            print(f"⚠️  Limite de {self.MAX_TABLES} tabelas atingido. Removendo a mais antiga.", file=sys.__stdout__)
+            # Remover primeira tabela (mais antiga)
+            self.sub.remove_page(0)
+
         # Render simples como texto monoespaçado
         text_view = Gtk.TextView()
         text_view.set_editable(False)

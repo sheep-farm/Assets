@@ -29,6 +29,19 @@ class Node:
     COLOR_TEXT = (1, 1, 1)           # Branco (header)
     COLOR_TEXT_BODY = (0.2, 0.2, 0.2)  # Preto (corpo)
 
+    # Cores por tipo de porta
+    PORT_COLORS = {
+        'any': (0.5, 0.5, 0.5),      # Cinza
+        'int': (0.3, 0.6, 1.0),      # Azul claro
+        'float': (0.4, 0.7, 1.0),    # Azul ainda mais claro
+        'str': (1.0, 0.7, 0.3),      # Laranja
+        'list': (0.7, 0.3, 1.0),     # Roxo
+        'dict': (1.0, 0.4, 0.7),     # Rosa
+        'dataframe': (0.2, 0.8, 0.4),  # Verde
+        'array': (0.3, 0.9, 0.6),    # Verde claro
+        'figure': (1.0, 0.5, 0.2),   # Laranja escuro
+    }
+
     def __init__(self, x, y, title="Code Node", num_inputs=2, num_outputs=1, node_id=None):
         """
         Inicializa um nó.
@@ -190,8 +203,12 @@ class Node:
                      i * self.HEIGHT_PORT + self.HEIGHT_PORT / 2)
             port_x = self.x  # Exatamente na borda esquerda
 
+            # Cor baseada no tipo da porta
+            port_type = self.input_types[i] if i < len(self.input_types) else 'any'
+            port_color = self.PORT_COLORS.get(port_type, self.COLOR_PORT)
+
             # Desenhar bolinha
-            context.set_source_rgb(*self.COLOR_PORT)
+            context.set_source_rgb(*port_color)
             context.arc(port_x, port_y, self.PORT_RADIUS, 0, 2 * 3.14159)
             context.fill()
 
@@ -222,8 +239,12 @@ class Node:
                      i * self.HEIGHT_PORT + self.HEIGHT_PORT / 2)
             port_x = self.x + self.WIDTH  # Exatamente na borda direita
 
+            # Cor baseada no tipo da porta
+            port_type = self.output_types[i] if i < len(self.output_types) else 'any'
+            port_color = self.PORT_COLORS.get(port_type, self.COLOR_PORT)
+
             # Desenhar bolinha
-            context.set_source_rgb(*self.COLOR_PORT)
+            context.set_source_rgb(*port_color)
             context.arc(port_x, port_y, self.PORT_RADIUS, 0, 2 * 3.14159)
             context.fill()
 
@@ -380,6 +401,76 @@ class Node:
         if 0 <= index < len(self.output_ports):
             return self.output_ports[index]
         return None
+
+    def validate_input_types(self, inputs):
+        """
+        Valida se os tipos dos inputs batem com os tipos esperados.
+
+        Args:
+            inputs: Tupla com valores de entrada
+
+        Returns:
+            tuple: (is_valid, error_message)
+        """
+        if len(inputs) != len(self.input_types):
+            return False, f"Esperava {len(self.input_types)} inputs, recebeu {len(inputs)}"
+
+        for i, (value, expected_type) in enumerate(zip(inputs, self.input_types)):
+            # 'any' aceita qualquer coisa
+            if expected_type == 'any' or value is None:
+                continue
+
+            # Validação por tipo
+            actual_type = type(value).__name__
+
+            if expected_type == 'int':
+                if not isinstance(value, int) or isinstance(value, bool):
+                    return False, f"Porta in[{i}] esperava 'int', recebeu '{actual_type}'"
+
+            elif expected_type == 'float':
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    return False, f"Porta in[{i}] esperava 'float', recebeu '{actual_type}'"
+
+            elif expected_type == 'str':
+                if not isinstance(value, str):
+                    return False, f"Porta in[{i}] esperava 'str', recebeu '{actual_type}'"
+
+            elif expected_type == 'list':
+                if not isinstance(value, list):
+                    return False, f"Porta in[{i}] esperava 'list', recebeu '{actual_type}'"
+
+            elif expected_type == 'dict':
+                if not isinstance(value, dict):
+                    return False, f"Porta in[{i}] esperava 'dict', recebeu '{actual_type}'"
+
+            elif expected_type == 'dataframe':
+                try:
+                    import pandas as pd
+                    if not isinstance(value, pd.DataFrame):
+                        return False, f"Porta in[{i}] esperava 'DataFrame', recebeu '{actual_type}'"
+                except ImportError:
+                    # Se pandas não está instalado, ignora validação
+                    pass
+
+            elif expected_type == 'array':
+                try:
+                    import numpy as np
+                    if not isinstance(value, np.ndarray):
+                        return False, f"Porta in[{i}] esperava 'ndarray', recebeu '{actual_type}'"
+                except ImportError:
+                    # Se numpy não está instalado, ignora validação
+                    pass
+
+            elif expected_type == 'figure':
+                try:
+                    import matplotlib.figure
+                    if not isinstance(value, matplotlib.figure.Figure):
+                        return False, f"Porta in[{i}] esperava 'Figure', recebeu '{actual_type}'"
+                except ImportError:
+                    # Se matplotlib não está instalado, ignora validação
+                    pass
+
+        return True, ""
 
     def _draw_error_icon(self, context):
         """Desenha ícone de erro (!) no canto superior direito"""

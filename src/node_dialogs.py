@@ -267,6 +267,7 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
         # Criar páginas
         self._create_general_page()
         self._create_code_page()
+        self._create_ports_page()
         self._create_info_page()
 
         # Botão Apply no header
@@ -376,7 +377,77 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
 
         page.add(group)
         self.add(page)
-    
+
+    def _create_ports_page(self):
+        """Cria página de configuração de portas e tipos"""
+        page = Adw.PreferencesPage()
+        page.set_title("Ports")
+        page.set_icon_name("network-wired-symbolic")
+
+        # Tipos disponíveis
+        available_types = ['any', 'int', 'float', 'str', 'list', 'dict', 'dataframe', 'array', 'figure']
+
+        # Group: Input Ports
+        input_group = Adw.PreferencesGroup()
+        input_group.set_title("Input Ports")
+        input_group.set_description("Configure types for input ports")
+
+        self.input_type_combos = []
+        for i in range(self.node.num_inputs):
+            row = Adw.ComboRow()
+            row.set_title(f"Input Port {i}")
+
+            # Criar string list com tipos
+            string_list = Gtk.StringList()
+            for t in available_types:
+                string_list.append(t)
+            row.set_model(string_list)
+
+            # Selecionar tipo atual
+            current_type = self.node.input_types[i] if i < len(self.node.input_types) else 'any'
+            try:
+                idx = available_types.index(current_type)
+                row.set_selected(idx)
+            except ValueError:
+                row.set_selected(0)  # Default: any
+
+            self.input_type_combos.append(row)
+            input_group.add(row)
+
+        page.add(input_group)
+
+        # Group: Output Ports
+        output_group = Adw.PreferencesGroup()
+        output_group.set_title("Output Ports")
+        output_group.set_description("Configure types for output ports")
+
+        self.output_type_combos = []
+        for i in range(self.node.num_outputs):
+            row = Adw.ComboRow()
+            row.set_title(f"Output Port {i}")
+
+            # Criar string list com tipos
+            string_list = Gtk.StringList()
+            for t in available_types:
+                string_list.append(t)
+            row.set_model(string_list)
+
+            # Selecionar tipo atual
+            current_type = self.node.output_types[i] if i < len(self.node.output_types) else 'any'
+            try:
+                idx = available_types.index(current_type)
+                row.set_selected(idx)
+            except ValueError:
+                row.set_selected(0)  # Default: any
+
+            self.output_type_combos.append(row)
+            output_group.add(row)
+
+        page.add(output_group)
+
+        self.add(page)
+        self.available_types = available_types  # Guardar para get_properties
+
     def _create_info_page(self):
         """Cria página de informações e metadata"""
         page = Adw.PreferencesPage()
@@ -497,6 +568,17 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
         tags_text = self.tags_entry.get_text().strip()
         tags = [t.strip() for t in tags_text.split(',') if t.strip()]
 
+        # Pegar tipos das portas
+        input_types = []
+        for combo in self.input_type_combos:
+            idx = combo.get_selected()
+            input_types.append(self.available_types[idx])
+
+        output_types = []
+        for combo in self.output_type_combos:
+            idx = combo.get_selected()
+            output_types.append(self.available_types[idx])
+
         return {
             "title": self.name_entry.get_text().strip(),
             "num_inputs": int(self.inputs_spin.get_value()),
@@ -507,5 +589,7 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
             "version": self.version_entry.get_text().strip(),
             "tags": tags,
             "category": self.category_entry.get_text().strip(),
-            "custom_color": custom_color
+            "custom_color": custom_color,
+            "input_types": input_types,
+            "output_types": output_types
         }
