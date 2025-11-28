@@ -64,13 +64,12 @@ class Node:
         self.drag_offset_x = 0  # Offset do mouse ao arrastar
         self.drag_offset_y = 0
 
+        # Estado de execução
+        self.has_error = False  # Se o nó teve erro na última execução
+        self.error_message = ""  # Mensagem de erro
+
         # Código Python do nó
         self._code = ""  # Armazenamento interno
-
-        # Sistema de cache (última execução)
-        self._last_inputs = None      # Hash das últimas entradas
-        self._last_outputs = None     # Resultados da última execução
-        self._cache_valid = False     # Flag de validade do cache
 
         # Metadata profissional
         self.description = ""         # Descrição do que o nó faz
@@ -82,6 +81,11 @@ class Node:
         # Documentação de portas
         self.input_docs = []          # Descrição de cada porta de entrada
         self.output_docs = []         # Descrição de cada porta de saída
+
+        # Tipos de portas (None = any type)
+        # Tipos suportados: 'int', 'float', 'str', 'list', 'dict', 'dataframe', 'any'
+        self.input_types = ['any'] * num_inputs   # Tipo esperado em cada entrada
+        self.output_types = ['any'] * num_outputs  # Tipo de cada saída
 
         # Customização visual
         self.custom_color = None      # Cor customizada (tuple RGB ou None)
@@ -97,13 +101,8 @@ class Node:
 
     @code.setter
     def code(self, value):
-        """
-        Define o código Python do nó.
-        Invalida o cache quando o código é modificado.
-        """
-        if self._code != value:
-            self._code = value
-            self.invalidate_cache()
+        """Define o código Python do nó."""
+        self._code = value
 
     def draw(self, context):
         """
@@ -144,8 +143,10 @@ class Node:
 
     def _draw_header(self, context):
         """Desenha o header (parte azul com título)"""
-        # Retângulo do header - usar cor customizada se disponível
-        if self.custom_color:
+        # Retângulo do header - usar cor de erro, customizada ou padrão
+        if self.has_error:
+            context.set_source_rgb(0.8, 0.2, 0.2)  # Vermelho para erro
+        elif self.custom_color:
             context.set_source_rgb(*self.custom_color)
         else:
             context.set_source_rgb(*self.COLOR_HEADER)
@@ -171,8 +172,12 @@ class Node:
         context.move_to(text_x, text_y)
         context.show_text(self.title)
 
+        # Desenhar ícone de erro se houver
+        if self.has_error:
+            self._draw_error_icon(context)
+
         # Desenhar indicador de profiling se houver dados
-        if self.last_execution_time > 0:
+        if self.last_execution_time > 0 and not self.has_error:
             self._draw_profiling_badge(context)
 
     def _draw_input_ports(self, context):
@@ -376,73 +381,29 @@ class Node:
             return self.output_ports[index]
         return None
 
-    def _hash_inputs(self, inputs):
-        """
-        Gera hash das entradas para comparação de cache.
+    def _draw_error_icon(self, context):
+        """Desenha ícone de erro (!) no canto superior direito"""
+        icon_x = self.x + self.WIDTH - 20
+        icon_y = self.y + self.HEIGHT_HEADER / 2
 
-        Args:
-            inputs: Tupla com valores de entrada
+        # Círculo de fundo amarelo
+        context.set_source_rgb(1.0, 0.85, 0.0)
+        context.arc(icon_x, icon_y, 10, 0, 2 * 3.14159)
+        context.fill()
 
-        Returns:
-            int: Hash das entradas
-        """
-        try:
-            # Converte para string e gera hash
-            # Usa repr() para capturar tipos diferentes
-            input_str = repr(inputs)
-            return hash(input_str)
-        except Exception:
-            # Se não conseguir gerar hash, retorna None (força recálculo)
-            return None
+        # Borda preta
+        context.set_source_rgb(0, 0, 0)
+        context.set_line_width(1.5)
+        context.arc(icon_x, icon_y, 10, 0, 2 * 3.14159)
+        context.stroke()
 
-    def get_cached_result(self, inputs):
-        """
-        Tenta recuperar resultado do cache.
-
-        Args:
-            inputs: Tupla com valores de entrada
-
-        Returns:
-            tuple: (resultado, from_cache)
-                - resultado: Resultado em cache ou None se inválido
-                - from_cache: bool indicando se veio do cache
-        """
-        if not self._cache_valid:
-            return None, False
-
-        # Verificar se entradas são iguais
-        current_hash = self._hash_inputs(inputs)
-        if current_hash is None or current_hash != self._last_inputs:
-            return None, False
-
-        # Usar stdout original para não ser capturado
-        import sys
-        print(f"✓ Cache hit: {self.title}", file=sys.__stdout__)
-        return self._last_outputs, True
-
-    def set_cache(self, inputs, outputs):
-        """
-        Armazena resultado no cache.
-
-        Args:
-            inputs: Tupla com valores de entrada
-            outputs: Resultados da execução
-        """
-        self._last_inputs = self._hash_inputs(inputs)
-        self._last_outputs = outputs
-        self._cache_valid = True
-        # Usar stdout original para não ser capturado
-        import sys
-        print(f"⚙️ Executado e cacheado: {self.title}", file=sys.__stdout__)
-
-    def invalidate_cache(self):
-        """
-        Invalida o cache, forçando recálculo na próxima execução.
-        Útil quando o código do nó é modificado.
-        """
-        self._cache_valid = False
-        self._last_inputs = None
-        self._last_outputs = None
+        # Símbolo "!" em preto
+        context.set_source_rgb(0, 0, 0)
+        context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        context.set_font_size(14)
+        extents = context.text_extents("!")
+        context.move_to(icon_x - extents.width / 2, icon_y + extents.height / 2)
+        context.show_text("!")
 
     def _draw_profiling_badge(self, context):
         """Desenha badge com tempo de execução no canto superior direito"""

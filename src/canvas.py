@@ -847,10 +847,12 @@ class AssetsCanvas(Gtk.DrawingArea):
         if hasattr(window, 'output_panel'):
             GLib.idle_add(window.output_panel.clear_all)
 
-        # Limpar cache de TODOS os nós antes de executar
+        # Limpar output_values e estado de erro de TODOS os nós antes de executar
         # Isso garante execução limpa sem resultados antigos
         for node in self.nodes:
             node.output_values = {}
+            node.has_error = False
+            node.error_message = ""
 
         # 1. Verificar se grafo tem ciclos
         execution_order = self._topological_sort()
@@ -927,6 +929,9 @@ class AssetsCanvas(Gtk.DrawingArea):
                 # PROCESSAR outputs especiais na MAIN THREAD (fora do executor)
                 if hasattr(window, 'output_panel'):
                     for node, outputs in level_results:
+                        # Pular nós que falharam (outputs = None)
+                        if outputs is None:
+                            continue
                         for output in outputs:
                             self._process_special_output(output, node, window.output_panel)
 
@@ -1134,53 +1139,63 @@ class AssetsCanvas(Gtk.DrawingArea):
 
     def _execute_node_code(self, node, inputs):
         """
-        Executa o código Python de um nó com profiling.
+        Executa o código Python de um nó com profiling e error handling.
 
         Args:
             node: Nó a ser executado
             inputs: Tupla com inputs do nó
 
         Returns:
-            tuple: Tupla com outputs do nó
+            tuple: Tupla com outputs do nó, ou None se erro
         """
         import time
+        import traceback
 
         if not node.code or node.code.strip() == "":
             print(f"  ⚠️  Nó sem código, retornando inputs como outputs")
             return inputs
 
-        # Tentar recuperar do cache
-        result, from_cache = node.get_cached_result(inputs)
-        if from_cache:
+        try:
+            # Executar código com profiling
+            start_time = time.perf_counter()
+
+            # Transformar o código em uma função
+            code_as_function = "def __node_function(inputs):\n"
+            for line in node.code.split('\n'):
+                code_as_function += f"    {line}\n"
+
+            namespace = {'__builtins__': __builtins__}
+            exec(code_as_function, namespace)
+
+            # Chamar a função com os inputs
+            result = namespace['__node_function'](inputs)
+
+            # Calcular tempo de execução
+            execution_time = time.perf_counter() - start_time
+            node.last_execution_time = execution_time
+            node.total_executions += 1
+
+            # Garantir que retorno é tupla
+            if not isinstance(result, tuple):
+                result = (result,)
+
             return result
 
-        # Cache miss - executar código com profiling
-        start_time = time.perf_counter()
+        except Exception as e:
+            # Capturar erro e marcar nó
+            node.has_error = True
+            node.error_message = str(e)
 
-        # Transformar o código em uma função
-        code_as_function = "def __node_function(inputs):\n"
-        for line in node.code.split('\n'):
-            code_as_function += f"    {line}\n"
+            # Imprimir erro detalhado
+            print(f"❌ ERRO em '{node.title}':")
+            print(f"   {type(e).__name__}: {e}")
+            traceback.print_exc()
 
-        namespace = {'__builtins__': __builtins__}
-        exec(code_as_function, namespace)
+            # Redesenhar canvas para mostrar erro visualmente
+            from gi.repository import GLib
+            GLib.idle_add(self.queue_draw)
 
-        # Chamar a função com os inputs
-        result = namespace['__node_function'](inputs)
-
-        # Calcular tempo de execução
-        execution_time = time.perf_counter() - start_time
-        node.last_execution_time = execution_time
-        node.total_executions += 1
-
-        # Garantir que retorno é tupla
-        if not isinstance(result, tuple):
-            result = (result,)
-
-        # Armazenar no cache
-        node.set_cache(inputs, result)
-
-        return result
+            return None
 
     def on_mouse_released(self, gesture, n_press, x, y):
         """Quando o mouse é solto"""
