@@ -847,6 +847,11 @@ class AssetsCanvas(Gtk.DrawingArea):
         if hasattr(window, 'output_panel'):
             GLib.idle_add(window.output_panel.clear_all)
 
+        # Limpar cache de TODOS os nós antes de executar
+        # Isso garante execução limpa sem resultados antigos
+        for node in self.nodes:
+            node.output_values = {}
+
         # 1. Verificar se grafo tem ciclos
         execution_order = self._topological_sort()
         if execution_order is None:

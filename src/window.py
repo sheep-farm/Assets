@@ -256,6 +256,24 @@ class AssetsWindow(Adw.ApplicationWindow):
         """Handle Close Tab action - fecha a aba atual"""
         current_page = self.tab_view.get_selected_page()
         if current_page:
+            # Limpar estado do projeto antes de fechar
+            if hasattr(current_page, 'project'):
+                project = current_page.project
+
+                # Limpar output panel
+                project.output_panel.clear_all()
+
+                # Limpar output_values de todos os nós
+                for node in project.canvas.nodes:
+                    node.output_values = {}
+
+                # Fechar matplotlib figures se houver
+                try:
+                    import matplotlib.pyplot as plt
+                    plt.close('all')
+                except:
+                    pass
+
             # Se só tem uma aba, cria uma nova antes de fechar
             if self.tab_view.get_n_pages() == 1:
                 self._create_new_tab()
