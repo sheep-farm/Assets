@@ -43,6 +43,7 @@ assets_sources = [
   'output_panel.py',
   'undo_redo.py',
   'project_tab.py',
+  'data_helpers.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)

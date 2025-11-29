@@ -211,10 +211,10 @@ class SaveToLibraryDialog(Adw.Window):
         self.name_entry = name_row
         prefs_group.add(name_row)
 
-        # Categoria
+        # Categoria (usar categoria do nó se existir, senão "Custom")
         category_row = Adw.EntryRow()
         category_row.set_title("Category")
-        category_row.set_text("My Nodes")
+        category_row.set_text(node.category if node.category else "Custom")
         self.category_entry = category_row
         prefs_group.add(category_row)
 
@@ -224,6 +224,21 @@ class SaveToLibraryDialog(Adw.Window):
         desc_row.set_text(f"Custom node: {node.title}")
         self.desc_entry = desc_row
         prefs_group.add(desc_row)
+
+        # Visibilidade (ComboRow)
+        visibility_row = Adw.ComboRow()
+        visibility_row.set_title("Visibility")
+        visibility_row.set_subtitle("Private: local only, Public: shareable")
+
+        # Criar lista de opções
+        visibility_list = Gtk.StringList()
+        visibility_list.append("Private")
+        visibility_list.append("Public")
+        visibility_row.set_model(visibility_list)
+        visibility_row.set_selected(0)  # Default: Private
+
+        self.visibility_combo = visibility_row
+        prefs_group.add(visibility_row)
 
         content_box.append(prefs_group)
 
@@ -245,10 +260,14 @@ class SaveToLibraryDialog(Adw.Window):
 
     def get_info(self):
         """Retorna informações do template"""
+        visibility_index = self.visibility_combo.get_selected()
+        visibility = "private" if visibility_index == 0 else "public"
+
         return {
             "name": self.name_entry.get_text().strip() or self.node.title,
             "category": self.category_entry.get_text().strip() or "My Nodes",
-            "description": self.desc_entry.get_text().strip() or f"Custom node: {self.node.title}"
+            "description": self.desc_entry.get_text().strip() or f"Custom node: {self.node.title}",
+            "visibility": visibility
         }
 
 
@@ -512,6 +531,31 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
 
         page.add(meta_group)
 
+        # Group: Library Settings
+        library_group = Adw.PreferencesGroup()
+        library_group.set_title("Library Settings")
+        library_group.set_description("Configure how this node is saved in the library")
+
+        # Visibilidade
+        visibility_row = Adw.ComboRow()
+        visibility_row.set_title("Visibility")
+        visibility_row.set_subtitle("Private: local only, Public: shareable in repositories")
+
+        # Criar lista de opções
+        visibility_list = Gtk.StringList()
+        visibility_list.append("Private")
+        visibility_list.append("Public")
+        visibility_row.set_model(visibility_list)
+
+        # Selecionar visibilidade atual (default: private)
+        current_visibility = getattr(self.node, 'visibility', 'private')
+        visibility_row.set_selected(0 if current_visibility == 'private' else 1)
+
+        self.visibility_combo = visibility_row
+        library_group.add(visibility_row)
+
+        page.add(library_group)
+
         # Group: Appearance
         appearance_group = Adw.PreferencesGroup()
         appearance_group.set_title("Appearance")
@@ -579,6 +623,10 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
             idx = combo.get_selected()
             output_types.append(self.available_types[idx])
 
+        # Pegar visibilidade
+        visibility_index = self.visibility_combo.get_selected()
+        visibility = "private" if visibility_index == 0 else "public"
+
         return {
             "title": self.name_entry.get_text().strip(),
             "num_inputs": int(self.inputs_spin.get_value()),
@@ -591,5 +639,6 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
             "category": self.category_entry.get_text().strip(),
             "custom_color": custom_color,
             "input_types": input_types,
-            "output_types": output_types
+            "output_types": output_types,
+            "visibility": visibility
         }

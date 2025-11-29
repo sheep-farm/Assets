@@ -13,6 +13,7 @@ from .graph_io import GraphSerializer, get_default_save_directory
 from .node_library import _get_library
 from .output_panel import OutputPanel
 from .undo_redo import UndoRedoManager
+from .data_helpers import create_data_helpers, process_folder_output
 
 class AssetsCanvas(Gtk.DrawingArea):
     """Canvas que desenha os nós"""
@@ -68,6 +69,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Inicializar sistema de Undo/Redo
         self.undo_manager = UndoRedoManager(self)
         self._recording_undo = True  # Flag para controlar gravação
+
 
         # print(f"✓ Canvas criado com {len(self.nodes)} nós")
         # print(f"✓ {len(self.connections)} conexões criadas")
@@ -969,7 +971,7 @@ class AssetsCanvas(Gtk.DrawingArea):
     def _process_special_output(self, output, node, output_panel):
         """
         Processa outputs especiais e envia para o painel apropriado.
-        Usa GLib.idle_add() quando chamado de thread de background.
+        Usa GLib.idle_add para garantir que está na main thread.
 
         Args:
             output: Output do nó
@@ -983,21 +985,25 @@ class AssetsCanvas(Gtk.DrawingArea):
             # Console output (compartilhado, sem abas)
             if "_console" in output:
                 console_text = str(output["_console"]) + "\n"
+                print(f"  → Processando console output de '{node.title}': {console_text.strip()}")
                 GLib.idle_add(output_panel.add_console, console_text)
                 return
 
             # Plot matplotlib
             if "_plot" in output:
+                print(f"  → Processando plot output de '{node.title}'")
                 GLib.idle_add(output_panel.add_plot, output["_plot"], f"Plot from: {node.title}")
                 return
 
             # Tabela (DataFrame)
             if "_table" in output:
+                print(f"  → Processando table output de '{node.title}'")
                 GLib.idle_add(output_panel.add_table, output["_table"], f"Table from: {node.title}")
                 return
 
             # Dados estruturados
             if "_data" in output:
+                print(f"  → Processando data output de '{node.title}'")
                 GLib.idle_add(output_panel.add_data, output["_data"], f"Data from: {node.title}")
                 return
 
@@ -1150,6 +1156,17 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         return tuple(inputs)
 
+    def _get_project_directory(self):
+        """
+        Retorna o diretório home do usuário.
+
+        Como load_data() e save_data() agora aceitam paths absolutos,
+        project_dir serve apenas como fallback para paths relativos.
+
+        Use sempre paths absolutos: load_data("~/caminho/arquivo.csv")
+        """
+        return Path.home()
+
     def _execute_node_code(self, node, inputs):
         """
         Executa o código Python de um nó com profiling e error handling.
@@ -1189,7 +1206,31 @@ class AssetsCanvas(Gtk.DrawingArea):
             for line in node.code.split('\n'):
                 code_as_function += f"    {line}\n"
 
-            namespace = {'__builtins__': __builtins__}
+            # Obter diretório do projeto
+            project_dir = self._get_project_directory()
+
+            # Criar helpers de dados configurados para este projeto
+            helpers = create_data_helpers(project_dir)
+
+            # Preparar namespace com builtins + helpers + bibliotecas úteis
+            namespace = {
+                '__builtins__': __builtins__,
+                # Data helpers
+                'load_data': helpers['load_data'],
+                'save_data': helpers['save_data'],
+                'load': helpers['load'],
+                'save': helpers['save'],
+                'project_dir': helpers['project_dir'],
+                # Diretórios úteis
+                'nodes_dir': Path.home() / ".nodes",
+                'home_dir': Path.home(),
+                # Bibliotecas comuns
+                'pd': __import__('pandas'),
+                'np': __import__('numpy'),
+                'plt': __import__('matplotlib.pyplot'),
+                'Path': Path,
+            }
+
             exec(code_as_function, namespace)
 
             # Chamar a função com os inputs
@@ -1203,6 +1244,9 @@ class AssetsCanvas(Gtk.DrawingArea):
             # Garantir que retorno é tupla
             if not isinstance(result, tuple):
                 result = (result,)
+
+            # Processar outputs com "_folder" para auto-save
+            result = process_folder_output(result, node.title, project_dir)
 
             return result
 
@@ -1798,9 +1842,13 @@ class AssetsCanvas(Gtk.DrawingArea):
         if info["name"] != node.title:
             node.title = info["name"]
 
+        # Atualizar categoria do nó
+        node.category = info["category"]
+
         # Salvar na biblioteca
         library = _get_library()
-        success = library.save_node_template(node, info["category"])
+        visibility = info.get("visibility", "private")
+        success = library.save_node_template(node, info["category"], visibility)
 
         if success:
             print(f"✓ Nó '{info['name']}' salvo na categoria '{info['category']}'")

@@ -17,7 +17,7 @@ class NodeLibrary:
     NODE_SCHEMA = {
         "required": ["name", "num_inputs", "num_outputs"],
         "optional": ["description", "default_code", "tags", "author", "version",
-                    "input_docs", "output_docs", "color", "category"]
+                    "input_docs", "output_docs", "color", "category", "visibility"]
     }
 
     def __init__(self, nodes_dir: Optional[str] = None):
@@ -113,13 +113,14 @@ class NodeLibrary:
             except Exception as e:
                 print(f"❌ Erro ao carregar {json_file.name}: {e}")
 
-    def save_node_template(self, node, category_name: str):
+    def save_node_template(self, node, category_name: str, visibility: str = "private"):
         """
         Salva um nó como template na biblioteca.
 
         Args:
             node: Objeto Node a ser salvo
             category_name: Nome da categoria
+            visibility: "private" (local apenas) ou "public" (compartilhável)
 
         Returns:
             bool: True se salvou com sucesso
@@ -133,25 +134,46 @@ class NodeLibrary:
 
             # Carregar arquivo existente ou criar novo
             if user_file.exists():
-                with open(user_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                try:
+                    with open(user_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                except json.JSONDecodeError as e:
+                    print(f"⚠️  Arquivo corrompido: {user_file}")
+                    print(f"⚠️  Erro: {e}")
+                    # Fazer backup do arquivo corrompido
+                    backup_file = user_file.with_suffix('.json.backup')
+                    import shutil
+                    shutil.copy2(user_file, backup_file)
+                    print(f"⚠️  Backup criado: {backup_file}")
+                    # Começar com dados vazios
+                    data = {}
             else:
                 data = {}
 
             # Criar categoria se não existir
             if category_name not in data:
                 data[category_name] = {
-                    "icon": "⭐",  # Ícone padrão para nós customizados
+                    "icon": "",  # Sem ícone para categorias criadas pelo usuário
                     "nodes": []
                 }
 
-            # Criar template do nó
+            # Criar template do nó com todos os metadados
             node_template = {
                 "name": node.title,
-                "description": f"Custom node: {node.title}",
+                "description": node.description or f"Custom node: {node.title}",
                 "num_inputs": node.num_inputs,
                 "num_outputs": node.num_outputs,
-                "default_code": node.code.split('\n') if node.code else []
+                "default_code": node.code.split('\n') if node.code else [],
+                "author": node.author,
+                "version": node.version,
+                "tags": node.tags,
+                "category": node.category,
+                "input_docs": node.input_docs,
+                "output_docs": node.output_docs,
+                "input_types": node.input_types,
+                "output_types": node.output_types,
+                "color": list(node.custom_color) if node.custom_color else None,
+                "visibility": visibility  # "private" ou "public"
             }
 
             # Verificar se já existe nó com mesmo nome
@@ -314,13 +336,84 @@ class NodeLibrary:
                     results.append({**node, "_category": category_name})
         return results
 
-    def export_library(self, output_path: str, categories: Optional[List[str]] = None):
+    def set_node_visibility(self, node_name: str, category_name: str, visibility: str) -> bool:
+        """
+        Define a visibilidade de um nó na biblioteca.
+
+        Args:
+            node_name: Nome do nó
+            category_name: Nome da categoria
+            visibility: "private" ou "public"
+
+        Returns:
+            bool: True se alterou com sucesso
+        """
+        try:
+            # Arquivo do usuário
+            user_file = self.nodes_dir / "my_nodes.json"
+
+            if not user_file.exists():
+                print(f"❌ Arquivo não encontrado: {user_file}")
+                return False
+
+            # Carregar arquivo
+            with open(user_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Encontrar e alterar nó
+            if category_name not in data:
+                print(f"❌ Categoria não encontrada: {category_name}")
+                return False
+
+            nodes = data[category_name]["nodes"]
+            for node in nodes:
+                if node["name"] == node_name:
+                    node["visibility"] = visibility
+
+                    # Salvar arquivo
+                    with open(user_file, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+
+                    # Recarregar biblioteca
+                    self.reload()
+
+                    print(f"✓ Visibilidade de '{node_name}' alterada para '{visibility}'")
+                    return True
+
+            print(f"❌ Nó não encontrado: {node_name}")
+            return False
+
+        except Exception as e:
+            print(f"❌ Erro ao alterar visibilidade: {e}")
+            return False
+
+    def get_public_nodes(self) -> List[Dict]:
+        """Retorna apenas nós marcados como públicos"""
+        results = []
+        for category_name, category_data in self.library.items():
+            for node in category_data["nodes"]:
+                if node.get("visibility", "private") == "public":
+                    results.append({**node, "_category": category_name})
+        return results
+
+    def get_private_nodes(self) -> List[Dict]:
+        """Retorna apenas nós marcados como privados"""
+        results = []
+        for category_name, category_data in self.library.items():
+            for node in category_data["nodes"]:
+                if node.get("visibility", "private") == "private":
+                    results.append({**node, "_category": category_name})
+        return results
+
+    def export_library(self, output_path: str, categories: Optional[List[str]] = None,
+                      include_private: bool = False):
         """
         Exporta biblioteca (ou categorias específicas) para arquivo .zip
 
         Args:
             output_path: Caminho do arquivo .zip de saída
             categories: Lista de categorias para exportar (None = todas)
+            include_private: Se True, inclui nós privados; False = apenas públicos
         """
         try:
             output_file = Path(output_path)
@@ -338,14 +431,30 @@ class NodeLibrary:
                     if json_file.name.startswith("."):
                         continue
 
-                    # Carregar e filtrar por categoria se necessário
+                    # Carregar e filtrar por categoria e visibilidade
                     with open(json_file, 'r') as f:
                         data = json.load(f)
 
+                    # Filtrar por categoria
                     if categories:
                         filtered_data = {k: v for k, v in data.items() if k in categories}
                     else:
                         filtered_data = data
+
+                    # Filtrar por visibilidade (se include_private=False)
+                    if not include_private:
+                        for category_name in list(filtered_data.keys()):
+                            # Filtrar apenas nós públicos
+                            public_nodes = [
+                                node for node in filtered_data[category_name]["nodes"]
+                                if node.get("visibility", "private") == "public"
+                            ]
+
+                            if public_nodes:
+                                filtered_data[category_name]["nodes"] = public_nodes
+                            else:
+                                # Remove categoria se não houver nós públicos
+                                del filtered_data[category_name]
 
                     if filtered_data:
                         zipf.writestr(f"nodes/{json_file.name}",

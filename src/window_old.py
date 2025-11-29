@@ -1383,9 +1383,13 @@ class AssetsCanvas(Gtk.DrawingArea):
             if info["name"] != node.title:
                 node.title = info["name"]
 
+            # Atualizar categoria do nó
+            node.category = info["category"]
+
             # Salvar na biblioteca
             library = _get_library()
-            success = library.save_node_template(node, info["category"])
+            visibility = info.get("visibility", "private")
+            success = library.save_node_template(node, info["category"], visibility)
 
             if success:
                 print(f"✓ Nó '{info['name']}' salvo na categoria '{info['category']}'")

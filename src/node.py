@@ -103,6 +103,9 @@ class Node:
         # Customização visual
         self.custom_color = None      # Cor customizada (tuple RGB ou None)
 
+        # Configurações de biblioteca
+        self.visibility = "private"   # "private" ou "public"
+
         # Profiling
         self.last_execution_time = 0.0  # Tempo da última execução em segundos
         self.total_executions = 0       # Contador de execuções
@@ -534,7 +537,8 @@ class Node:
             "category": self.category,
             "input_docs": self.input_docs,
             "output_docs": self.output_docs,
-            "custom_color": self.custom_color
+            "custom_color": self.custom_color,
+            "visibility": self.visibility
         }
     
     @classmethod
@@ -565,4 +569,5 @@ class Node:
         node.input_docs = data.get("input_docs", [])
         node.output_docs = data.get("output_docs", [])
         node.custom_color = data.get("custom_color")
+        node.visibility = data.get("visibility", "private")
         return node
