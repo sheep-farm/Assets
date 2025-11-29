@@ -71,7 +71,7 @@ template $AssetsWindow : Adw.ApplicationWindow {
         Adw.HeaderBar {
           [start]
           ToggleButton sidebar_toggle {
-            icon-name: "view-left-pane-symbolic";
+            icon-name: "sidebar-show-symbolic";
             tooltip-text: "Toggle Sidebar";
             active: true;
           }
@@ -98,7 +98,7 @@ template $AssetsWindow : Adw.ApplicationWindow {
           Button run_button {
             icon-name: "media-playback-start-symbolic";
             tooltip-text: "Run Graph";
-            styles ["suggested-action"]
+            // styles ["suggested-action"]
           }
         }
 

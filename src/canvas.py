@@ -872,12 +872,6 @@ class AssetsCanvas(Gtk.DrawingArea):
             print("⚠️  Nenhum nó para executar")
             return False
 
-        # Limpar outputs anteriores (via idle_add para thread-safety)
-        from gi.repository import GLib
-        window = self.get_root()
-        if hasattr(window, 'output_panel'):
-            GLib.idle_add(window.output_panel.clear_all)
-
         # Limpar output_values e estado de erro de TODOS os nós antes de executar
         # Isso garante execução limpa sem resultados antigos
         for node in self.nodes:
@@ -904,18 +898,18 @@ class AssetsCanvas(Gtk.DrawingArea):
         node_results = {}
         results_lock = threading.Lock()
 
-        # 4. Capturar stdout
-        import sys
-        from io import StringIO
+        # Obter referência à janela para acessar output_panel
+        window = self.get_root()
 
-        old_stdout = sys.stdout
-        sys.stdout = captured_output = StringIO()
+        # Limpar outputs anteriores antes de executar
+        from gi.repository import GLib
+        if hasattr(window, 'output_panel'):
+            GLib.idle_add(window.output_panel.clear_all)
 
         try:
-            # 5. Executar cada nível em paralelo
+            # 4. Executar cada nível em paralelo
             for level_idx, level in enumerate(levels):
-                print(f"⚡ Executando nível {level_idx} ({len(level)} nós em paralelo)...",
-                      file=sys.__stdout__)
+                print(f"⚡ Executando nível {level_idx} ({len(level)} nós em paralelo)...")
 
                 # Função para executar um nó
                 def execute_node_wrapper(node):
@@ -949,8 +943,6 @@ class AssetsCanvas(Gtk.DrawingArea):
                         node, outputs, error = future.result()
 
                         if error:
-                            # Restaurar stdout antes de retornar
-                            sys.stdout = old_stdout
                             print(error)
                             return False
 
@@ -966,25 +958,9 @@ class AssetsCanvas(Gtk.DrawingArea):
                         for output in outputs:
                             self._process_special_output(output, node, window.output_panel)
 
-            # Capturar texto do console
-            console_text = captured_output.getvalue()
-
-            # Restaurar stdout
-            sys.stdout = old_stdout
-
-            # Adicionar output do console ao painel (via idle_add para thread-safety)
-            if console_text and hasattr(window, 'output_panel'):
-                GLib.idle_add(window.output_panel.console_tab.add_text, console_text)
-
-            # Também printar no stdout real
-            if console_text:
-                print(console_text)
-
             return True
 
         except Exception as e:
-            # Garantir que stdout seja restaurado mesmo com erro
-            sys.stdout = old_stdout
             print(f"❌ Erro na execução: {e}")
             import traceback
             traceback.print_exc()
@@ -1004,6 +980,12 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Se output é dict com chaves especiais, processar
         if isinstance(output, dict):
+            # Console output (compartilhado, sem abas)
+            if "_console" in output:
+                console_text = str(output["_console"]) + "\n"
+                GLib.idle_add(output_panel.add_console, console_text)
+                return
+
             # Plot matplotlib
             if "_plot" in output:
                 GLib.idle_add(output_panel.add_plot, output["_plot"], f"Plot from: {node.title}")

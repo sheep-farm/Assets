@@ -21,11 +21,16 @@ class OutputPanel(Gtk.Box):
         self.append(self.header)
 
         # Separator
-        self.append(Gtk.Separator())
+        self.separator = Gtk.Separator()
+        self.append(self.separator)
 
         # Notebook com tabs (globais)
         self.notebook = Gtk.Notebook()
         self.notebook.set_scrollable(True)
+
+        # Estado de visibilidade
+        self.is_visible = True
+        self.saved_height = None  # Altura salva antes de ocultar
 
         # Criar tabs
         self.console_tab = ConsoleTab()
@@ -51,18 +56,19 @@ class OutputPanel(Gtk.Box):
         header.set_margin_start(12)
         header.set_margin_end(12)
 
-        label = Gtk.Label()
-        label.set_markup("<b>📊 Output Panel</b>")
-        label.set_xalign(0)
-        header.append(label)
+        # Botão de Show/Hide com o título
+        self.toggle_btn = Gtk.Button()
+        self.toggle_btn.set_has_frame(False)
+        title_label = Gtk.Label()
+        title_label.set_markup("<b>📊 Output Panel</b>")
+        title_label.set_xalign(0)
+        self.toggle_btn.set_child(title_label)
+        self.toggle_btn.connect("clicked", self._on_toggle_visibility)
+        header.append(self.toggle_btn)
 
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         header.append(spacer)
-
-        clear_btn = Gtk.Button(label="Clear All")
-        clear_btn.connect("clicked", lambda b: self.clear_all())
-        header.append(clear_btn)
 
         return header
 
@@ -75,7 +81,34 @@ class OutputPanel(Gtk.Box):
         label = self._create_tab_label(f"{icon} {name}", count)
         self.notebook.set_tab_label(self.notebook.get_nth_page(tab_index), label)
 
+    def _on_toggle_visibility(self, button):
+        """Toggle show/hide do notebook de outputs"""
+        # Encontrar o Paned pai
+        parent = self.get_parent()
+        while parent and not isinstance(parent, Gtk.Paned):
+            parent = parent.get_parent()
+
+        if not parent:
+            return
+
+        self.is_visible = not self.is_visible
+
+        if self.is_visible:
+            # Mostrar: restaurar altura salva
+            self.notebook.set_visible(True)
+            self.separator.set_visible(True)
+            if self.saved_height is not None:
+                parent.set_position(self.saved_height)
+        else:
+            # Ocultar: salvar altura atual e minimizar
+            self.saved_height = parent.get_position()
+            self.notebook.set_visible(False)
+            self.separator.set_visible(False)
+            # Mover divisor para o final (minimizar output panel)
+            parent.set_position(parent.get_allocated_height() - 40)
+
     def clear_all(self):
+        """Limpa todos os outputs (chamado ao clicar em Run)"""
         self.console_tab.clear()
         self.plots_tab.clear()
         self.tables_tab.clear()
@@ -85,7 +118,6 @@ class OutputPanel(Gtk.Box):
         self._update_tab_label(1, "📊", "Plots", 0)
         self._update_tab_label(2, "📋", "Tables", 0)
         self._update_tab_label(3, "📦", "Data", 0)
-        print("✓ Output panel cleared", file=sys.__stdout__)
 
     # ===== API pública (sem mudar assinaturas) =====
 

@@ -59,6 +59,9 @@ class AssetsWindow(Adw.ApplicationWindow):
         # Estado de população
         self._is_populating = False
 
+        # Rastrear quais categorias estão expandidas (True = expandida, False = contraída)
+        self._expanded_categories = {}
+
         # Conectar signals do Toolbar
         self.search_entry.connect("search-changed", self._on_search_changed)
         self.favorites_toggle.connect("toggled", self._on_favorites_toggled)
@@ -259,9 +262,6 @@ class AssetsWindow(Adw.ApplicationWindow):
             # Limpar estado do projeto antes de fechar
             if hasattr(current_page, 'project'):
                 project = current_page.project
-
-                # Limpar output panel
-                project.output_panel.clear_all()
 
                 # Limpar output_values de todos os nós
                 for node in project.canvas.nodes:
@@ -513,28 +513,42 @@ class AssetsWindow(Adw.ApplicationWindow):
                 self.node_list.remove(row)
 
             if nodes is None:
-                # Normal mode: show by categories
+                # Normal mode: show by categories with expand/collapse
                 for category in get_all_categories():
                     icon = get_category_icon(category)
 
-                    # Category header
+                    # Inicializar estado da categoria se não existir (contraída por padrão)
+                    if category not in self._expanded_categories:
+                        self._expanded_categories[category] = False
+
+                    is_expanded = self._expanded_categories[category]
+                    expand_icon = "−" if is_expanded else "+"
+
+                    # Category header (clicável para expandir/contrair)
+                    header_button = Gtk.Button()
+                    header_button.set_has_frame(False)
+                    header_button.set_halign(Gtk.Align.START)
                     header_label = Gtk.Label()
-                    header_label.set_markup(f"<b>{icon} {category}</b>")
+                    header_label.set_markup(f"<b>{expand_icon} {icon} {category}</b>")
                     header_label.set_xalign(0)
-                    header_label.set_margin_top(12)
-                    header_label.set_margin_bottom(3)
-                    header_label.set_margin_start(6)
-                    header_label.add_css_class("heading")
+                    header_button.set_child(header_label)
+                    header_button.connect("clicked", self._on_category_toggle, category)
+
+                    header_button.set_margin_top(6)
+                    header_button.set_margin_bottom(3)
+                    header_button.set_margin_start(3)
+
                     header_row = Gtk.ListBoxRow()
-                    header_row.set_child(header_label)
+                    header_row.set_child(header_button)
                     header_row.set_selectable(False)
                     header_row.set_activatable(False)
                     self.node_list.append(header_row)
 
-                    # Nodes in category
-                    category_nodes = get_nodes_in_category(category)
-                    for node_template in category_nodes:
-                        self._create_node_row(node_template)
+                    # Nodes in category (somente se expandida)
+                    if is_expanded:
+                        category_nodes = get_nodes_in_category(category)
+                        for node_template in category_nodes:
+                            self._create_node_row(node_template)
             else:
                 # Search/filter mode: show specific nodes
                 if not nodes:
@@ -593,6 +607,14 @@ class AssetsWindow(Adw.ApplicationWindow):
         row.set_child(hbox)
         row.set_activatable(False)
         self.node_list.append(row)
+
+    def _on_category_toggle(self, button, category):
+        """Toggle expand/collapse de uma categoria"""
+        # Alternar estado
+        self._expanded_categories[category] = not self._expanded_categories.get(category, False)
+
+        # Repopular lista para mostrar/ocultar nós
+        self._populate_node_list()
 
     def _on_node_template_clicked(self, button, template):
         """When clicking a node template in the library"""
