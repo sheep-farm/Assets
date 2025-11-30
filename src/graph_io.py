@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
 graph_io.py - Sistema de salvar/carregar grafos
+
+IMPORTANTE: A partir de agora, .assets são arquivos ZIP contendo:
+  - graph.json: dados do grafo
+  - wheels/: pasta com dependências .whl
 """
 
 import json
 from pathlib import Path
+from .zip_project import AssetsProject, create_new_project
 
 
 class GraphSerializer:
@@ -13,26 +18,24 @@ class GraphSerializer:
     VERSION = "1.0"
     
     @staticmethod
-    def save_graph(nodes, connections, filepath, view_state=None):
+    def save_graph(nodes, connections, filepath, view_state=None, project_metadata=None):
         """
-        Salva grafo em arquivo JSON.
+        Salva grafo em arquivo .assets (ZIP).
 
         Args:
             nodes: Lista de objetos Node
             connections: Lista de tuplas (node_origem, porta_saida, node_destino, porta_entrada)
-            filepath: Caminho do arquivo
+            filepath: Caminho do arquivo .assets
             view_state: Dicionário com estado visual (zoom, scroll position, etc.)
+            project_metadata: Dicionário com metadados do projeto (requirements, author, etc.)
 
         Returns:
             bool: True se salvou com sucesso
         """
         try:
-            # Criar mapa de node ID para índice
-            node_id_to_index = {node.id: i for i, node in enumerate(nodes)}
-            
             # Serializar nós
             nodes_data = [node.to_dict() for node in nodes]
-            
+
             # Serializar conexões (usar IDs ao invés de referências)
             connections_data = []
             for conn in connections:
@@ -43,7 +46,7 @@ class GraphSerializer:
                     "target_node_id": dst_node.id,
                     "target_port": dst_port
                 })
-            
+
             # Estrutura completa
             graph_data = {
                 "version": GraphSerializer.VERSION,
@@ -54,46 +57,61 @@ class GraphSerializer:
             # Adicionar estado visual se fornecido
             if view_state:
                 graph_data["view_state"] = view_state
-            
-            # Salvar em arquivo
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(graph_data, f, indent=2, ensure_ascii=False)
-            
-            print(f"✓ Grafo salvo: {filepath}")
-            return True
-            
+
+            # Adicionar metadados do projeto
+            if project_metadata:
+                graph_data["project_metadata"] = project_metadata
+            else:
+                # Metadados padrão com dependências essenciais
+                graph_data["project_metadata"] = {
+                    "requirements": ["pandas", "numpy", "matplotlib"],
+                    "python_mode": "system",  # "system" ou "flatpak"
+                    "blacklist": [],
+                    "author": "",
+                    "description": "",
+                    "created_at": None,
+                    "modified_at": None
+                }
+
+            # Salvar como ZIP usando AssetsProject
+            project = AssetsProject(filepath)
+            return project.save_graph(graph_data)
+
         except Exception as e:
             print(f"❌ Erro ao salvar grafo: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     @staticmethod
-    def load_graph(filepath):
+    def load_graph(filepath, check_dependencies=True):
         """
-        Carrega grafo de arquivo JSON.
-        
+        Carrega grafo de arquivo .assets (ZIP).
+
         Args:
-            filepath: Caminho do arquivo
-            
+            filepath: Caminho do arquivo .assets
+            check_dependencies: Se True, verifica dependências (obsoleto, wheels são carregados automaticamente)
+
         Returns:
             dict: Dicionário com dados brutos {"nodes": [...], "connections": [...]}
                   ou None se erro
         """
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                graph_data = json.load(f)
-            
+            # Carregar usando AssetsProject
+            project = AssetsProject(filepath)
+            graph_data = project.load_graph()
+
+            if graph_data is None:
+                return None
+
             # Verificar versão
             version = graph_data.get("version", "1.0")
             if version != GraphSerializer.VERSION:
                 print(f"⚠️  Versão do arquivo ({version}) diferente da atual ({GraphSerializer.VERSION})")
-            
-            print(f"✓ Grafo carregado: {filepath}")
-            print(f"  - {len(graph_data.get('nodes', []))} nós")
-            print(f"  - {len(graph_data.get('connections', []))} conexões")
-            
-            # Retorna apenas o dict - window.py faz a deserialização
+
+            # Retorna apenas o dict - window.py faz a deserialização e setup do ambiente isolado
             return graph_data
-            
+
         except Exception as e:
             print(f"❌ Erro ao carregar grafo: {e}")
             import traceback

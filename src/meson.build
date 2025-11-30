@@ -44,6 +44,12 @@ assets_sources = [
   'undo_redo.py',
   'project_tab.py',
   'data_helpers.py',
+  'project_dependencies.py',
+  'project_settings_dialog.py',
+  'zip_project.py',
+  'dependency_manager.py',
+  'dependencies_dialog.py',
+  'system_venv.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)

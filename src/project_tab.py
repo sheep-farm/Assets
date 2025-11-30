@@ -1,5 +1,7 @@
 """
 project_tab.py - Encapsula um projeto (aba) completo
+
+Gerencia ambiente isolado de dependências (wheels) por projeto
 """
 
 from gi.repository import Gtk, Adw
@@ -17,6 +19,11 @@ class ProjectTab:
         self.current_file = None
         self.is_modified = False
 
+        # Ambiente isolado de dependências
+        self.isolated_env = None  # Instância de AssetsProject (modo flatpak) ou SystemVenv (modo system)
+        self.project_metadata = None  # Metadados do projeto
+        self.python_mode = "flatpak"  # "flatpak" ou "system"
+
         # Container principal - box vertical com toolbar + paned
         self.main_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.main_container.set_vexpand(True)
@@ -24,6 +31,8 @@ class ProjectTab:
 
         # Criar canvas
         self.canvas = AssetsCanvas()
+        # Canvas precisa referenciar o projeto para saber o python_mode
+        self.canvas.project_tab = self
 
         # Colocar canvas dentro de ScrolledWindow
         self.scrolled_window = Gtk.ScrolledWindow()
@@ -75,3 +84,62 @@ class ProjectTab:
     def needs_save(self):
         """Verifica se precisa salvar"""
         return self.is_modified and len(self.canvas.nodes) > 0
+
+    def setup_isolated_environment(self, project_path: str, graph_data: dict = None):
+        """
+        Configura ambiente isolado de dependências para este projeto
+
+        Args:
+            project_path: Caminho do arquivo .assets
+            graph_data: Dados do grafo (opcional, para ler python_mode)
+        """
+        # Limpar ambiente anterior se existir
+        self.cleanup_isolated_environment()
+
+        # Determinar modo Python
+        if graph_data:
+            metadata = graph_data.get('project_metadata', {})
+            self.python_mode = metadata.get('python_mode', 'flatpak')
+            self.project_metadata = metadata
+        else:
+            self.python_mode = 'flatpak'
+
+        project_name = Path(project_path).stem
+
+        if self.python_mode == 'system':
+            # Modo System Python - usar venv do sistema
+            from .system_venv import setup_project_venv
+
+            print(f"\n🐍 Modo: System Python (venv)")
+            requirements = self.project_metadata.get('requirements', [])
+
+            self.isolated_env = setup_project_venv(project_name, requirements)
+
+            if self.isolated_env:
+                print(f"✓ Venv configurado para: {project_name}")
+            else:
+                print(f"❌ Falha ao configurar venv")
+
+        else:
+            # Modo Flatpak - usar wheels dentro do .assets
+            from .zip_project import AssetsProject
+
+            print(f"\n📦 Modo: Flatpak (wheels isolados)")
+
+            self.isolated_env = AssetsProject(project_path)
+            self.isolated_env.setup_isolated_environment()
+
+            print(f"✓ Ambiente isolado configurado para: {project_name}")
+
+    def cleanup_isolated_environment(self):
+        """Limpa ambiente isolado de dependências"""
+        if self.isolated_env:
+            if self.python_mode == 'flatpak':
+                self.isolated_env.cleanup_isolated_environment()
+            # System venv persiste (não precisa limpar)
+            self.isolated_env = None
+            print(f"✓ Ambiente limpo")
+
+    def __del__(self):
+        """Destrutor - garante limpeza do ambiente"""
+        self.cleanup_isolated_environment()

@@ -1167,6 +1167,81 @@ class AssetsCanvas(Gtk.DrawingArea):
         """
         return Path.home()
 
+    def _execute_via_system_venv(self, node, inputs, venv):
+        """
+        Executa código usando Python do sistema via subprocess
+
+        Args:
+            node: Nó a executar
+            inputs: Tupla de inputs
+            venv: Instância do SystemVenv
+
+        Returns:
+            tuple: Outputs ou None se erro
+        """
+        import pickle
+        import base64
+        import time
+
+        try:
+            start_time = time.perf_counter()
+
+            # Serializar inputs para passar ao subprocess
+            inputs_b64 = base64.b64encode(pickle.dumps(inputs)).decode('ascii')
+
+            # Criar script que será executado no venv
+            script = f'''
+import pickle
+import base64
+import sys
+
+# Deserializar inputs
+inputs = pickle.loads(base64.b64decode({repr(inputs_b64)}))
+
+# Código do nó
+{node.code}
+
+# Serializar outputs
+import pickle
+import base64
+output_b64 = base64.b64encode(pickle.dumps(result if 'result' in locals() else None)).decode('ascii')
+print("__OUTPUT__:" + output_b64)
+'''
+
+            # Executar via venv
+            success, stdout, stderr = venv.run_code(script, timeout=60)
+
+            execution_time = time.perf_counter() - start_time
+            node.last_execution_time = execution_time
+            node.total_executions += 1
+
+            if not success:
+                print(f"❌ ERRO ao executar via system venv:")
+                print(stderr)
+                raise RuntimeError(stderr)
+
+            # Extrair output serializado
+            for line in stdout.split('\n'):
+                if line.startswith('__OUTPUT__:'):
+                    output_b64 = line.split(':', 1)[1]
+                    result = pickle.loads(base64.b64decode(output_b64))
+
+                    # Garantir que é tupla
+                    if not isinstance(result, tuple):
+                        result = (result,)
+
+                    return result
+
+            # Se não encontrou output, erro
+            raise RuntimeError("Nenhum resultado retornado")
+
+        except Exception as e:
+            print(f"❌ ERRO em '{node.title}' (system venv):")
+            print(f"   {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     def _execute_node_code(self, node, inputs):
         """
         Executa o código Python de um nó com profiling e error handling.
@@ -1184,6 +1259,14 @@ class AssetsCanvas(Gtk.DrawingArea):
         if not node.code or node.code.strip() == "":
             print(f"  ⚠️  Nó sem código, retornando inputs como outputs")
             return inputs
+
+        # Verificar se deve usar system venv
+        if hasattr(self, 'project_tab'):
+            project = self.project_tab
+            if hasattr(project, 'python_mode') and project.python_mode == 'system':
+                # Executar via subprocess no venv do sistema
+                print(f"🐍 Executando '{node.title}' via system venv")
+                return self._execute_via_system_venv(node, inputs, project.isolated_env)
 
         try:
             # Validar tipos de entrada ANTES de executar

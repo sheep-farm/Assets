@@ -48,6 +48,9 @@ class AssetsWindow(Adw.ApplicationWindow):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        # IMPORTANTE: Criar ações PRIMEIRO, antes de renderizar UI
+        self._create_actions()
+
         # Clipboard global para copiar entre projetos (lista de nós)
         self.clipboard_nodes = []
         self.clipboard_connections = []  # Conexões entre nós copiados
@@ -71,6 +74,9 @@ class AssetsWindow(Adw.ApplicationWindow):
         # Conectar signals dos botões principais
         self.run_button.connect("clicked", self._on_run_graph)
         # self.result_toggle.connect("toggled", self._on_result_toggle)
+
+        # Criar botão de dependências programaticamente
+        self._add_deps_button()
 
         # Popular lista inicial de nodes
         self._populate_node_list()
@@ -98,8 +104,100 @@ class AssetsWindow(Adw.ApplicationWindow):
         # Inicializar referências para a primeira aba
         self._on_tab_changed(self.tab_view, None)
 
-        # Setup window actions
-        self._create_actions()
+    def _add_deps_button(self):
+        """Adiciona botão de gerenciar dependências"""
+        print("🔧 _add_deps_button() called")
+
+        # Apenas registrar atalho de teclado por enquanto
+        app = self.get_application()
+        if app:
+            app.set_accels_for_action("win.manage-dependencies", ["<Ctrl>d"])
+            print("✓ Keyboard shortcut Ctrl+D registered for dependencies")
+            print("  Press Ctrl+D to open Dependencies Manager")
+        else:
+            print("⚠️  No app available for keyboard shortcut")
+
+    def _auto_install_dependencies(self, project, filepath, graph_data):
+        """Instala dependências listadas em project_metadata.requirements"""
+        import threading
+        from .dependency_manager import DependencyManager
+
+        print("\n" + "="*60)
+        print("📦 VERIFICANDO DEPENDÊNCIAS DO PROJETO")
+        print("="*60)
+
+        # Usar APENAS a lista de requirements do metadata
+        required = set(graph_data.get('project_metadata', {}).get('requirements', []))
+
+        if not required:
+            print("ℹ️  Nenhuma dependência especificada em project_metadata.requirements")
+            print("="*60 + "\n")
+            return
+
+        print(f"📋 Dependências requeridas: {', '.join(sorted(required))}")
+
+        # Verificar o que está faltando
+        missing = set()
+        for package in required:
+            try:
+                module_name = package.replace('-', '_')
+                __import__(module_name)
+            except ImportError:
+                missing.add(package)
+
+        manager = DependencyManager(filepath)
+
+        if not missing:
+            print("✓ Todas as dependências estão disponíveis")
+            print("="*60 + "\n")
+            return
+
+        print(f"⚠️  {len(missing)} pacote(s) faltando: {', '.join(sorted(missing))}")
+        print(f"\n🔄 Instalando automaticamente...")
+        print("="*60 + "\n")
+
+        def install_worker():
+            """Worker thread para instalar em background"""
+            success = manager.add_packages(list(missing))
+
+            if success:
+                print("\n" + "="*60)
+                print("✓ DEPENDÊNCIAS INSTALADAS COM SUCESSO")
+                print("="*60)
+                print("📝 Salvando projeto...")
+
+                # NÃO PRECISA SALVAR AQUI!
+                # O DependencyManager.add_packages() JÁ salvou o projeto com wheels
+                # Apenas recarregar o ambiente
+                from gi.repository import GLib
+                def reload_only():
+                    save_path = project.current_file
+
+                    print("\n🔄 Recarregando ambiente do arquivo salvo (já contém wheels)...")
+                    print(f"   Arquivo: {save_path}")
+
+                    # Recarregar ambiente do arquivo SALVO
+                    # Note: graph_data já foi alterado pelo add_packages, mas vamos recarregar
+                    from .graph_io import GraphSerializer
+                    reloaded_data = GraphSerializer.load_graph(save_path, check_dependencies=False)
+                    if reloaded_data:
+                        project.setup_isolated_environment(save_path, reloaded_data)
+                    else:
+                        project.setup_isolated_environment(save_path)
+
+                    print("✓ Ambiente recarregado - pronto para executar!")
+                    print("="*60 + "\n")
+
+                    # Mostrar toast
+                    toast = Adw.Toast.new(f"✓ {len(missing)} dependencies installed automatically")
+                    self.toast_overlay.add_toast(toast)
+
+                    return False
+
+                GLib.idle_add(reload_only)
+
+        thread = threading.Thread(target=install_worker, daemon=True)
+        thread.start()
 
         # Note: Canvas will grab focus when clicked (see canvas.py on_mouse_pressed)
         # We don't grab focus on startup to avoid interfering with search entry
@@ -242,12 +340,23 @@ class AssetsWindow(Adw.ApplicationWindow):
         close_tab_action.connect("activate", self.on_close_tab)
         self.add_action(close_tab_action)
 
+        # Project Settings
+        project_settings_action = Gio.SimpleAction.new("project-settings", None)
+        project_settings_action.connect("activate", self.on_project_settings)
+        self.add_action(project_settings_action)
+
+        # Manage Dependencies
+        manage_deps_action = Gio.SimpleAction.new("manage-dependencies", None)
+        manage_deps_action.connect("activate", self.on_manage_dependencies)
+        self.add_action(manage_deps_action)
+
         # Configurar atalhos de teclado
         app = self.get_application()
         if app:
             app.set_accels_for_action("win.new", ["<Ctrl>n"])
             app.set_accels_for_action("win.save", ["<Ctrl>s"])
             app.set_accels_for_action("win.close-tab", ["<Ctrl>w"])
+            app.set_accels_for_action("win.project-settings", ["<Ctrl>comma"])
 
 
     def on_new(self, action, param):
@@ -281,6 +390,65 @@ class AssetsWindow(Adw.ApplicationWindow):
             # Fecha a aba atual
             self.tab_view.close_page(current_page)
             print("✓ Tab closed")
+
+    def on_project_settings(self, action, param):
+        """Handle Project Settings action - abre dialog de metadados"""
+        from .project_settings_dialog import ProjectSettingsDialog
+
+        project = self.current_tab
+        if not project:
+            print("⚠️  No project open")
+            return
+
+        # Obter metadados atuais (ou criar padrão)
+        metadata = getattr(project, 'metadata', {
+            "requirements": [],
+            "author": "",
+            "description": "",
+            "created_at": None,
+            "modified_at": None,
+            "tags": [],
+            "version": "1.0.0"
+        })
+
+        # Criar dialog
+        dialog = ProjectSettingsDialog(self, metadata)
+
+        # Passar estatísticas do projeto
+        dialog.set_statistics(
+            len(project.canvas.nodes),
+            len(project.canvas.connections)
+        )
+
+        # Callback ao aplicar
+        def on_metadata_updated(new_metadata):
+            project.metadata = new_metadata
+            print(f"✓ Project metadata updated")
+            print(f"  Author: {new_metadata.get('author', 'N/A')}")
+            print(f"  Description: {new_metadata.get('description', 'N/A')}")
+            print(f"  Requirements: {', '.join(new_metadata.get('requirements', []))}")
+
+        dialog.on_apply_callback = on_metadata_updated
+        dialog.present()
+
+    def on_manage_dependencies(self, action, param):
+        """Handle Manage Dependencies action - abre dialog de dependências"""
+        from .dependencies_dialog import DependenciesDialog
+
+        project = self.current_tab
+        if not project:
+            toast = Adw.Toast.new("No project open")
+            self.toast_overlay.add_toast(toast)
+            return
+
+        if not project.current_file:
+            toast = Adw.Toast.new("Save the project before managing dependencies")
+            self.toast_overlay.add_toast(toast)
+            return
+
+        # Criar e mostrar dialog
+        dialog = DependenciesDialog(self, project)
+        dialog.present()
 
     def on_open(self, action, param):
         """Handle Open action"""
@@ -356,10 +524,27 @@ class AssetsWindow(Adw.ApplicationWindow):
                             new_page = self.tab_view.get_nth_page(n_pages - 1)
                             self.tab_view.set_selected_page(new_page)
 
+                    # Configurar ambiente isolado ANTES de carregar os nós
+                    project.setup_isolated_environment(filepath, graph_data)
+
                     # Update canvas do projeto
                     project.canvas.nodes = nodes
                     project.canvas.connections = connections
                     project.current_file = filepath
+
+                    # Carregar metadados do projeto
+                    project.metadata = graph_data.get("project_metadata", {
+                        "requirements": [],
+                        "author": "",
+                        "description": "",
+                        "created_at": None,
+                        "modified_at": None,
+                        "tags": [],
+                        "version": "1.0.0"
+                    })
+
+                    # Verificar e instalar dependências automaticamente
+                    self._auto_install_dependencies(project, filepath, graph_data)
 
                     # Pre-calculate port positions for all nodes
                     # This ensures connections can be drawn immediately
@@ -476,11 +661,15 @@ class AssetsWindow(Adw.ApplicationWindow):
             "scroll_y": vadj.get_value() if vadj else 0
         }
 
+        # Obter metadados do projeto (se existir)
+        project_metadata = getattr(project, 'metadata', None)
+
         success = GraphSerializer.save_graph(
             project.canvas.nodes,
             project.canvas.connections,
             filepath,
-            view_state
+            view_state,
+            project_metadata
         )
 
         if success:
