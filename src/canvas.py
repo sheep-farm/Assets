@@ -1189,15 +1189,96 @@ class AssetsCanvas(Gtk.DrawingArea):
             # Serializar inputs para passar ao subprocess
             inputs_b64 = base64.b64encode(pickle.dumps(inputs)).decode('ascii')
 
+            # Obter project_dir para helpers
+            project_dir = None
+            if hasattr(self, 'project_tab') and self.project_tab.current_file:
+                from pathlib import Path
+                project_dir = Path(self.project_tab.current_file).parent
+
             # Criar script que será executado no venv
             # IMPORTANTE: Envolve código do nó em função para capturar return
             script = f'''
 import pickle
 import base64
 import sys
+from pathlib import Path
+import pandas as pd
+import numpy as np
+import json
 
 # Deserializar inputs
 inputs = pickle.loads(base64.b64decode({repr(inputs_b64)}))
+
+# Helpers: load_data e save_data
+project_dir = Path({repr(str(project_dir))}) if {repr(str(project_dir))} != "None" else Path.home() / "Documents"
+
+def load_data(filename):
+    """Carrega arquivo do projeto (auto-detecta formato)"""
+    path = Path(filename).expanduser()
+    if not path.is_absolute():
+        path = project_dir / filename
+    if not path.exists():
+        raise FileNotFoundError(f"Arquivo não encontrado: {{path}}")
+    suffix = path.suffix.lower()
+    if suffix == '.csv':
+        return pd.read_csv(path)
+    elif suffix in ['.xls', '.xlsx']:
+        return pd.read_excel(path)
+    elif suffix == '.json':
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+            return pd.DataFrame(data)
+        return data
+    elif suffix == '.parquet':
+        return pd.read_parquet(path)
+    elif suffix in ['.txt', '.log']:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+    else:
+        raise ValueError(f"Formato não suportado: {{suffix}}")
+
+def save_data(data, filename, **kwargs):
+    """Salva dados no projeto (auto-detecta formato)"""
+    path = Path(filename).expanduser()
+    if not path.is_absolute():
+        path = project_dir / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    suffix = path.suffix.lower()
+
+    if isinstance(data, pd.DataFrame):
+        if suffix == '.csv':
+            data.to_csv(path, index=kwargs.get('index', False))
+        elif suffix in ['.xls', '.xlsx']:
+            data.to_excel(path, index=kwargs.get('index', False))
+        elif suffix == '.parquet':
+            data.to_parquet(path)
+        elif suffix == '.json':
+            data.to_json(path, orient=kwargs.get('orient', 'records'), indent=2)
+        else:
+            raise ValueError(f"Formato não suportado para DataFrame: {{suffix}}")
+    elif hasattr(data, 'savefig'):
+        data.savefig(path, dpi=kwargs.get('dpi', 150), bbox_inches='tight')
+    elif isinstance(data, (dict, list)):
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, default=str)
+    elif isinstance(data, str):
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(data)
+    elif isinstance(data, np.ndarray):
+        if suffix == '.csv':
+            pd.DataFrame(data).to_csv(path, index=False, header=False)
+        elif suffix == '.npy':
+            np.save(path, data)
+        else:
+            raise ValueError(f"Formato não suportado para array: {{suffix}}")
+    else:
+        raise TypeError(f"Tipo de dado não suportado: {{type(data)}}")
+    return path
+
+# Aliases
+load = load_data
+save = save_data
 
 # Executar código do nó dentro de função para capturar return
 def _node_func():
