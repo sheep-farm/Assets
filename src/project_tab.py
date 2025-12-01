@@ -23,6 +23,7 @@ class ProjectTab:
         self.isolated_env = None  # Instância de AssetsProject (modo flatpak) ou SystemVenv (modo system)
         self.project_metadata = None  # Metadados do projeto
         self.python_mode = "flatpak"  # "flatpak" ou "system"
+        self.environment_ready = False  # Se ambiente está pronto para execução
 
         # Container principal - box vertical com toolbar + paned
         self.main_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -85,14 +86,18 @@ class ProjectTab:
         """Verifica se precisa salvar"""
         return self.is_modified and len(self.canvas.nodes) > 0
 
-    def setup_isolated_environment(self, project_path: str, graph_data: dict = None):
+    def setup_isolated_environment(self, project_path: str, graph_data: dict = None, on_ready_callback=None):
         """
         Configura ambiente isolado de dependências para este projeto
 
         Args:
             project_path: Caminho do arquivo .assets
             graph_data: Dados do grafo (opcional, para ler python_mode)
+            on_ready_callback: Callback chamado quando ambiente estiver pronto
         """
+        # Marcar ambiente como não-pronto durante setup
+        self.environment_ready = False
+
         # Limpar ambiente anterior se existir
         self.cleanup_isolated_environment()
 
@@ -122,10 +127,16 @@ class ProjectTab:
                 # Atualizar no main thread
                 def update_env():
                     self.isolated_env = venv
+                    self.environment_ready = True  # Marcar como pronto
                     if venv:
                         print(f"✓ Venv configurado para: {project_name}")
                     else:
                         print(f"❌ Falha ao configurar venv")
+
+                    # Chamar callback se fornecido
+                    if on_ready_callback:
+                        on_ready_callback(bool(venv))
+
                     return False  # Remove from idle
 
                 GLib.idle_add(update_env)
@@ -141,8 +152,13 @@ class ProjectTab:
 
             self.isolated_env = AssetsProject(project_path)
             self.isolated_env.setup_isolated_environment()
+            self.environment_ready = True  # Flatpak é síncrono, já está pronto
 
             print(f"✓ Ambiente isolado configurado para: {project_name}")
+
+            # Chamar callback (flatpak é síncrono, já está pronto)
+            if on_ready_callback:
+                on_ready_callback(True)
 
     def cleanup_isolated_environment(self):
         """Limpa ambiente isolado de dependências"""
