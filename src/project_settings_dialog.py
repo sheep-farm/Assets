@@ -273,10 +273,15 @@ class ProjectSettingsDialog(Adw.PreferencesWindow):
         except:
             raw_metadata = {}
 
+        # Ler python_mode do ComboRow
+        selected_index = self.python_mode_combo.get_selected()
+        python_mode = "flatpak" if selected_index == 0 else "system"
+
         # Mesclar: campos do form têm prioridade
         metadata = {**raw_metadata, **self.metadata}
 
         metadata.update({
+            "python_mode": python_mode,
             "author": self.author_entry.get_text().strip(),
             "description": self.desc_entry.get_text().strip(),
             "version": self.version_entry.get_text().strip(),
