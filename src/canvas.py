@@ -1183,6 +1183,13 @@ class AssetsCanvas(Gtk.DrawingArea):
         import base64
         import time
 
+        # Debug: verificar se venv foi passado corretamente
+        if venv is None:
+            print(f"❌ ERRO: venv é None para nó '{node.title}'")
+            print(f"   project_tab.isolated_env = {getattr(self.project_tab, 'isolated_env', 'N/A') if hasattr(self, 'project_tab') else 'no project_tab'}")
+            print(f"   project_tab.python_mode = {getattr(self.project_tab, 'python_mode', 'N/A') if hasattr(self, 'project_tab') else 'no project_tab'}")
+            raise RuntimeError("System venv not configured. Please reopen the project or check Project Settings.")
+
         try:
             start_time = time.perf_counter()
 
