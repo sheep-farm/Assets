@@ -109,16 +109,29 @@ class ProjectTab:
         if self.python_mode == 'system':
             # Modo System Python - usar venv do sistema
             from .system_venv import setup_project_venv
+            import threading
+            from gi.repository import GLib
 
             print(f"\n🐍 Modo: System Python (venv)")
             requirements = self.project_metadata.get('requirements', [])
 
-            self.isolated_env = setup_project_venv(project_name, requirements)
+            # Executar setup em thread para não travar a UI
+            def setup_venv_background():
+                venv = setup_project_venv(project_name, requirements)
 
-            if self.isolated_env:
-                print(f"✓ Venv configurado para: {project_name}")
-            else:
-                print(f"❌ Falha ao configurar venv")
+                # Atualizar no main thread
+                def update_env():
+                    self.isolated_env = venv
+                    if venv:
+                        print(f"✓ Venv configurado para: {project_name}")
+                    else:
+                        print(f"❌ Falha ao configurar venv")
+                    return False  # Remove from idle
+
+                GLib.idle_add(update_env)
+
+            thread = threading.Thread(target=setup_venv_background, daemon=True)
+            thread.start()
 
         else:
             # Modo Flatpak - usar wheels dentro do .assets
