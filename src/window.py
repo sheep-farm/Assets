@@ -401,8 +401,9 @@ class AssetsWindow(Adw.ApplicationWindow):
             return
 
         # Obter metadados atuais (ou criar padrão)
-        metadata = getattr(project, 'metadata', {
+        metadata = getattr(project, 'project_metadata', {
             "requirements": [],
+            "python_mode": "flatpak",
             "author": "",
             "description": "",
             "created_at": None,
@@ -422,11 +423,44 @@ class AssetsWindow(Adw.ApplicationWindow):
 
         # Callback ao aplicar
         def on_metadata_updated(new_metadata):
-            project.metadata = new_metadata
+            old_python_mode = project.project_metadata.get('python_mode', 'flatpak') if hasattr(project, 'project_metadata') else 'flatpak'
+            new_python_mode = new_metadata.get('python_mode', 'flatpak')
+
+            project.project_metadata = new_metadata
             print(f"✓ Project metadata updated")
+            print(f"  Python Mode: {new_python_mode}")
             print(f"  Author: {new_metadata.get('author', 'N/A')}")
             print(f"  Description: {new_metadata.get('description', 'N/A')}")
             print(f"  Requirements: {', '.join(new_metadata.get('requirements', []))}")
+
+            # Salvar metadados no arquivo .assets
+            if project.current_file:
+                from .graph_io import GraphSerializer
+                GraphSerializer.save_graph(
+                    project.canvas.nodes,
+                    project.canvas.connections,
+                    project.current_file,
+                    view_state=None,
+                    project_metadata=new_metadata
+                )
+                print(f"✓ Metadata saved to {project.current_file}")
+
+                # Recarregar graph_data para pegar metadados atualizados
+                graph_data = GraphSerializer.load_graph(project.current_file, check_dependencies=False)
+
+                # Sempre recarregar ambiente (garante que requirements e python_mode estão sincronizados)
+                print(f"🔄 Reloading isolated environment...")
+                print(f"   Python mode: {new_python_mode}")
+                print(f"   Requirements: {new_metadata.get('requirements', [])}")
+                project.setup_isolated_environment(project.current_file, graph_data)
+
+                # Se python_mode mudou, mostrar toast
+                if old_python_mode != new_python_mode:
+                    toast = Adw.Toast.new(f"Switched to {new_python_mode} mode")
+                    self.toast_overlay.add_toast(toast)
+                else:
+                    toast = Adw.Toast.new("Project settings updated")
+                    self.toast_overlay.add_toast(toast)
 
         dialog.on_apply_callback = on_metadata_updated
         dialog.present()
