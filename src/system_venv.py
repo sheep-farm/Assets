@@ -26,6 +26,29 @@ class SystemVenv:
         self.python_bin = self.venv_path / "bin" / "python"
         self.pip_bin = self.venv_path / "bin" / "pip"
 
+        # Detectar se está rodando em Flatpak
+        self.in_flatpak = Path("/.flatpak-info").exists()
+        if self.in_flatpak:
+            print("🐋 Detectado: Rodando dentro do Flatpak")
+            print("   Comandos serão executados no host via flatpak-spawn")
+
+    def _run_host_command(self, cmd: List[str], **kwargs) -> subprocess.CompletedProcess:
+        """
+        Executa comando no host (com flatpak-spawn se necessário)
+
+        Args:
+            cmd: Comando a executar
+            **kwargs: Argumentos para subprocess.run()
+
+        Returns:
+            CompletedProcess
+        """
+        if self.in_flatpak:
+            # Prefixar com flatpak-spawn --host
+            cmd = ["flatpak-spawn", "--host"] + cmd
+
+        return subprocess.run(cmd, **kwargs)
+
     def exists(self) -> bool:
         """Verifica se o venv já existe"""
         return self.venv_path.exists() and self.python_bin.exists()
@@ -57,9 +80,10 @@ class SystemVenv:
 
             print(f"Python do sistema: {python_cmd}")
 
-            # Criar venv
-            result = subprocess.run(
-                [python_cmd, "-m", "venv", str(self.venv_path)],
+            # Criar venv com --copies para garantir que pip seja copiado
+            print(f"📦 Criando venv...")
+            result = self._run_host_command(
+                [python_cmd, "-m", "venv", "--copies", str(self.venv_path)],
                 capture_output=True,
                 text=True,
                 timeout=60
@@ -70,13 +94,30 @@ class SystemVenv:
                 print(result.stderr)
                 return False
 
+            # Verificar se pip existe
+            if not self.pip_bin.exists():
+                print(f"⚠️  pip não encontrado, instalando via ensurepip...")
+                result = self._run_host_command(
+                    [str(self.python_bin), "-m", "ensurepip", "--upgrade"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                if result.returncode != 0:
+                    print(f"❌ Erro ao instalar pip:")
+                    print(result.stderr)
+                    return False
+
             # Atualizar pip
             print(f"📦 Atualizando pip...")
-            subprocess.run(
+            result = self._run_host_command(
                 [str(self.pip_bin), "install", "--upgrade", "pip"],
                 capture_output=True,
                 timeout=60
             )
+            if result.returncode != 0:
+                print(f"⚠️  Erro ao atualizar pip (não crítico)")
+                print(result.stderr)
 
             print(f"✓ Venv criado com sucesso!")
             print(f"{'='*60}\n")
@@ -147,7 +188,7 @@ class SystemVenv:
             print(f"{'='*60}")
             print(f"Pacotes: {', '.join(packages)}")
 
-            result = subprocess.run(
+            result = self._run_host_command(
                 [str(self.pip_bin), "install", *packages],
                 capture_output=True,
                 text=True,
@@ -187,7 +228,7 @@ class SystemVenv:
             return False, "", "Venv não existe"
 
         try:
-            result = subprocess.run(
+            result = self._run_host_command(
                 [str(self.python_bin), "-c", code],
                 capture_output=True,
                 text=True,
@@ -213,7 +254,7 @@ class SystemVenv:
             return []
 
         try:
-            result = subprocess.run(
+            result = self._run_host_command(
                 [str(self.pip_bin), "freeze"],
                 capture_output=True,
                 text=True,

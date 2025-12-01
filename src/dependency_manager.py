@@ -23,6 +23,9 @@ class DependencyManager:
         """
         self.project = AssetsProject(project_path)
 
+        # Detectar se está em Flatpak
+        self.in_flatpak = Path("/.flatpak-info").exists()
+
     def scan_imports(self, graph_data: dict) -> Set[str]:
         """
         Escaneia código dos nós para detectar imports.
@@ -149,15 +152,76 @@ class DependencyManager:
         print(f"📦 Baixando wheels para: {', '.join(filtered_packages)}")
 
         try:
-            # Tentar usar pip3 diretamente se sys.executable não tiver pip
+            # Determinar comando pip
             import shutil
-            pip_cmd = shutil.which('pip3') or shutil.which('pip')
+
+            cmd_prefix = []
+            pip_cmd = None
+
+            # Se estiver em Flatpak, procurar pip3 no host
+            if self.in_flatpak:
+                print(f"🐋 Flatpak detectado - procurando pip3 no host")
+
+                # Tentar encontrar pip3 via which no host
+                try:
+                    result = subprocess.run(
+                        ["flatpak-spawn", "--host", "which", "pip3"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        pip_cmd = result.stdout.strip()
+                        cmd_prefix = ["flatpak-spawn", "--host"]
+                        print(f"✓ pip3 encontrado no host: {pip_cmd}")
+                except:
+                    pass
+
+                # Se não encontrou, tentar caminhos comuns
+                if not pip_cmd:
+                    for path in ["/usr/bin/pip3", "/usr/local/bin/pip3", "/bin/pip3"]:
+                        try:
+                            result = subprocess.run(
+                                ["flatpak-spawn", "--host", "test", "-f", path],
+                                capture_output=True,
+                                timeout=2
+                            )
+                            if result.returncode == 0:
+                                pip_cmd = path
+                                cmd_prefix = ["flatpak-spawn", "--host"]
+                                print(f"✓ pip3 encontrado: {pip_cmd}")
+                                break
+                        except:
+                            pass
+            else:
+                # Execução direta (não Flatpak)
+                pip_cmd = shutil.which('pip3') or shutil.which('pip')
 
             if not pip_cmd:
                 # Tentar usando python -m pip
                 try:
-                    cmd = [
-                        sys.executable, '-m', 'pip', 'download',
+                    if self.in_flatpak:
+                        # No Flatpak, encontrar python3 do host
+                        python_cmd = None
+                        try:
+                            result = subprocess.run(
+                                ["flatpak-spawn", "--host", "which", "python3"],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            if result.returncode == 0:
+                                python_cmd = result.stdout.strip()
+                        except:
+                            python_cmd = "/usr/bin/python3"  # fallback
+
+                        base_cmd = [python_cmd, '-m', 'pip']
+                        cmd_prefix = ["flatpak-spawn", "--host"]
+                    else:
+                        base_cmd = [sys.executable, '-m', 'pip']
+
+                    cmd = cmd_prefix + base_cmd + [
+                        'download',
                         '--dest', str(dest_dir),
                         '--only-binary', ':all:',
                         '--platform', 'manylinux2014_x86_64',
@@ -170,15 +234,13 @@ class DependencyManager:
                     print(f"\n{'='*60}")
                     print(f"⚠️  INSTALAÇÃO MANUAL DE WHEELS NECESSÁRIA")
                     print(f"{'='*60}")
-                    print(f"Para adicionar dependências, baixe os wheels manualmente e use:")
-                    print(f"\n  python3 -m src add-wheels {self.project.project_path} <wheels_dir>/")
-                    print(f"\nOu instale pip:")
+                    print(f"Para adicionar dependências, instale pip no host:")
                     print(f"  sudo apt install python3-pip")
                     print(f"{'='*60}\n")
                     return []
             else:
                 # Usar pip3 diretamente
-                cmd = [
+                cmd = cmd_prefix + [
                     pip_cmd, 'download',
                     '--dest', str(dest_dir),
                     '--only-binary', ':all:',

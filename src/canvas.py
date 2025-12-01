@@ -1190,6 +1190,7 @@ class AssetsCanvas(Gtk.DrawingArea):
             inputs_b64 = base64.b64encode(pickle.dumps(inputs)).decode('ascii')
 
             # Criar script que será executado no venv
+            # IMPORTANTE: Envolve código do nó em função para capturar return
             script = f'''
 import pickle
 import base64
@@ -1198,13 +1199,14 @@ import sys
 # Deserializar inputs
 inputs = pickle.loads(base64.b64decode({repr(inputs_b64)}))
 
-# Código do nó
-{node.code}
+# Executar código do nó dentro de função para capturar return
+def _node_func():
+{chr(10).join("    " + line for line in node.code.splitlines())}
+
+result = _node_func()
 
 # Serializar outputs
-import pickle
-import base64
-output_b64 = base64.b64encode(pickle.dumps(result if 'result' in locals() else None)).decode('ascii')
+output_b64 = base64.b64encode(pickle.dumps(result)).decode('ascii')
 print("__OUTPUT__:" + output_b64)
 '''
 
@@ -1229,6 +1231,14 @@ print("__OUTPUT__:" + output_b64)
                     # Garantir que é tupla
                     if not isinstance(result, tuple):
                         result = (result,)
+
+                    # Processar outputs com "_folder" para auto-save
+                    project_dir = None
+                    if hasattr(self, 'project_tab') and self.project_tab.current_file:
+                        from pathlib import Path
+                        project_dir = Path(self.project_tab.current_file).parent
+
+                    result = process_folder_output(result, node.title, project_dir)
 
                     return result
 
