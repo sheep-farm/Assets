@@ -558,8 +558,24 @@ class AssetsWindow(Adw.ApplicationWindow):
                             new_page = self.tab_view.get_nth_page(n_pages - 1)
                             self.tab_view.set_selected_page(new_page)
 
+                    # Toast inicial
+                    loading_toast = Adw.Toast.new("⏳ Setting up Python environment...")
+                    loading_toast.set_timeout(0)  # Infinite até terminar
+                    self.toast_overlay.add_toast(loading_toast)
+
                     # Configurar ambiente isolado ANTES de carregar os nós
-                    project.setup_isolated_environment(filepath, graph_data)
+                    def on_env_ready(success):
+                        loading_toast.dismiss()
+                        if success:
+                            ready_toast = Adw.Toast.new("✓ Environment ready!")
+                            ready_toast.set_timeout(2)
+                            self.toast_overlay.add_toast(ready_toast)
+                        else:
+                            error_toast = Adw.Toast.new("❌ Failed to setup environment")
+                            error_toast.set_timeout(3)
+                            self.toast_overlay.add_toast(error_toast)
+
+                    project.setup_isolated_environment(filepath, graph_data, on_env_ready)
 
                     # Update canvas do projeto
                     project.canvas.nodes = nodes
@@ -935,6 +951,13 @@ class AssetsWindow(Adw.ApplicationWindow):
         current_project = self.current_tab
         if not current_project:
             print("❌ No active project")
+            return
+
+        # Verificar se ambiente está pronto
+        if not current_project.environment_ready:
+            toast = Adw.Toast.new("⏳ Environment is still loading, please wait...")
+            toast.set_timeout(3)
+            self.toast_overlay.add_toast(toast)
             return
 
         # Disable button during execution
