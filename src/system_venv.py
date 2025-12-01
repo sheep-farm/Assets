@@ -228,15 +228,42 @@ class SystemVenv:
             return False, "", "Venv não existe"
 
         try:
-            result = self._run_host_command(
-                [str(self.python_bin), "-c", code],
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
+            # Escrever em arquivo temporário para evitar E2BIG (argumento muito longo)
+            # IMPORTANTE: Usar diretório acessível pelo host (não /tmp do Flatpak)
+            import tempfile
+            import os
 
-            success = result.returncode == 0
-            return success, result.stdout, result.stderr
+            # Usar diretório do venv (sempre acessível)
+            temp_dir = self.venv_path / "tmp"
+            temp_dir.mkdir(exist_ok=True)
+
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='.py',
+                delete=False,
+                dir=str(temp_dir)
+            ) as f:
+                f.write(code)
+                temp_script = f.name
+
+            try:
+                # Executar script via python do venv
+                result = self._run_host_command(
+                    [str(self.python_bin), temp_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout
+                )
+
+                success = result.returncode == 0
+                return success, result.stdout, result.stderr
+
+            finally:
+                # Limpar arquivo temporário
+                try:
+                    os.unlink(temp_script)
+                except:
+                    pass
 
         except subprocess.TimeoutExpired:
             return False, "", f"Timeout ({timeout}s)"
