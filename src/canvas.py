@@ -71,6 +71,9 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.undo_manager = UndoRedoManager(self)
         self._recording_undo = True  # Flag para controlar gravação
 
+        # Posição do menu de contexto (para paste na posição do mouse)
+        self.context_menu_position = None
+
 
         # print(f"✓ Canvas criado com {len(self.nodes)} nós")
         # print(f"✓ {len(self.connections)} conexões criadas")
@@ -831,22 +834,43 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Caso contrário, incompatível
         return False
 
-    def _paste_node(self):
-        """Cola os nós do clipboard global (Ctrl+V)"""
+    def _paste_node(self, paste_x=None, paste_y=None):
+        """
+        Cola os nós do clipboard global (Ctrl+V ou menu).
+
+        Args:
+            paste_x: Posição X onde colar (em coordenadas de canvas). Se None, usa offset
+            paste_y: Posição Y onde colar (em coordenadas de canvas). Se None, usa offset
+        """
         window = self.get_root()
         if not window or not window.clipboard_nodes:
             #print("⚠️  Clipboard vazio")
             return
 
-        # Deslocamento para não colar em cima
-        offset = 30
-
         # Verificar se estamos colando no mesmo projeto (adicionar "(cópia)" no título)
         is_same_project = any(node in self.nodes for node in window.clipboard_nodes)
+
+        # Se não foi fornecida posição, usar offset padrão
+        if paste_x is None or paste_y is None:
+            # Usar offset para Ctrl+V (teclado)
+            offset = 30
+            use_offset = True
+        else:
+            # Usar posição do mouse para colar via menu de contexto
+            use_offset = False
 
         # Mapa de nós antigos -> novos para recriar conexões
         node_map = {}
         new_nodes = []
+
+        # Calcular centro do grupo de nós copiados (para posicionar relativo ao mouse)
+        if not use_offset:
+            min_x = min(node.x for node in window.clipboard_nodes)
+            min_y = min(node.y for node in window.clipboard_nodes)
+            max_x = max(node.x for node in window.clipboard_nodes)
+            max_y = max(node.y for node in window.clipboard_nodes)
+            center_x = (min_x + max_x) / 2
+            center_y = (min_y + max_y) / 2
 
         # Criar cópias de todos os nós
         for clipboard_node in window.clipboard_nodes:
@@ -856,9 +880,22 @@ class AssetsCanvas(Gtk.DrawingArea):
             else:
                 title = clipboard_node.title
 
+            # Calcular posição do novo nó
+            if use_offset:
+                # Ctrl+V: offset simples
+                new_x = clipboard_node.x + 30
+                new_y = clipboard_node.y + 30
+            else:
+                # Menu contexto: posicionar relativo ao mouse
+                # Manter distância relativa do centro do grupo
+                offset_from_center_x = clipboard_node.x - center_x
+                offset_from_center_y = clipboard_node.y - center_y
+                new_x = paste_x + offset_from_center_x
+                new_y = paste_y + offset_from_center_y
+
             new_node = Node(
-                clipboard_node.x + offset,
-                clipboard_node.y + offset,
+                new_x,
+                new_y,
                 title,
                 num_inputs=clipboard_node.num_inputs,
                 num_outputs=clipboard_node.num_outputs
@@ -2000,6 +2037,10 @@ print("__OUTPUT__:" + output_b64)
         # Se menu está vazio, não mostrar
         if menu.get_n_items() == 0:
             return
+
+        # Guardar posição do clique em coordenadas de canvas (para paste)
+        canvas_x, canvas_y = self._screen_to_canvas(x, y)
+        self.context_menu_position = (canvas_x, canvas_y)
 
         # Criar popover
         popover = Gtk.PopoverMenu()
