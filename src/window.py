@@ -247,6 +247,18 @@ class AssetsWindow(Adw.ApplicationWindow):
             return page.project
         return None
 
+    def _on_paste_action(self, canvas):
+        """Handler para ação de paste do menu de contexto"""
+        # Verificar se há posição do menu de contexto salva
+        if hasattr(canvas, 'context_menu_position') and canvas.context_menu_position:
+            # Colar na posição do menu de contexto
+            paste_x, paste_y = canvas.context_menu_position
+            canvas._paste_node(paste_x, paste_y)
+            canvas.context_menu_position = None  # Limpar
+        else:
+            # Colar com offset padrão (Ctrl+V)
+            canvas._paste_node()
+
     def _setup_canvas_actions_for_project(self, project):
         """Setup actions for canvas context menu for a specific project"""
         canvas = project.canvas
@@ -286,7 +298,7 @@ class AssetsWindow(Adw.ApplicationWindow):
         canvas.action_group.add_action(cut_action)
 
         paste_action = Gio.SimpleAction.new("paste", None)
-        paste_action.connect("activate", lambda a, p: canvas._paste_node())
+        paste_action.connect("activate", lambda a, p: self._on_paste_action(canvas))
         canvas.action_group.add_action(paste_action)
 
         # Alignment actions
