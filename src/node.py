@@ -5,6 +5,15 @@ Node - Classe para desenhar e gerenciar um nó visual
 
 import cairo
 import uuid
+from enum import Enum
+
+
+class NodeExecutionState(Enum):
+    """Estados de execução de um nó"""
+    IDLE = "idle"           # Aguardando execução
+    RUNNING = "running"     # Em execução
+    COMPLETED = "completed" # Concluído com sucesso
+    ERROR = "error"         # Erro na execução
 
 
 class Node:
@@ -80,6 +89,7 @@ class Node:
         # Estado de execução
         self.has_error = False  # Se o nó teve erro na última execução
         self.error_message = ""  # Mensagem de erro
+        self.execution_state = NodeExecutionState.IDLE  # Estado de execução
 
         # Código Python do nó
         self._code = ""  # Armazenamento interno
@@ -145,6 +155,9 @@ class Node:
         # 6. Desenhar indicador de seleção (se selecionado)
         if self.selected:
             self._draw_selection_indicator(context)
+
+        # 7. Desenhar badge de estado de execução
+        self._draw_execution_state_badge(context)
 
     def _draw_body(self, context):
         """Desenha o corpo do nó (parte cinza)"""
@@ -288,9 +301,28 @@ class Node:
             self.output_ports.append((port_x, port_y))
 
     def _draw_border(self, context):
-        """Desenha borda ao redor do nó inteiro (muda com hover/seleção)"""
-        # Escolher cor e espessura baseado no estado
-        if self.selected:
+        """Desenha borda ao redor do nó inteiro (muda com hover/seleção/estado)"""
+        # Prioridade: erro > execução > seleção > hover > padrão
+
+        if self.execution_state == NodeExecutionState.RUNNING:
+            # Executando: borda azul pulsante (mais grossa)
+            context.set_source_rgb(0.2, 0.6, 1.0)  # Azul vivo
+            context.set_line_width(4)
+            # Adicionar glow
+            context.set_source_rgba(0.2, 0.6, 1.0, 0.3)
+            context.rectangle(self.x - 3, self.y - 3, self.WIDTH + 6, self.total_height + 6)
+            context.stroke()
+            context.set_source_rgb(0.2, 0.6, 1.0)
+            context.set_line_width(4)
+        elif self.execution_state == NodeExecutionState.COMPLETED:
+            # Concluído: borda verde suave
+            context.set_source_rgb(0.3, 0.7, 0.3)  # Verde
+            context.set_line_width(2.5)
+        elif self.execution_state == NodeExecutionState.IDLE:
+            # Aguardando: borda laranja suave
+            context.set_source_rgb(0.9, 0.6, 0.2)  # Laranja
+            context.set_line_width(2)
+        elif self.selected:
             context.set_source_rgb(0.2, 0.5, 1.0)  # Azul brilhante
             context.set_line_width(3)
         elif self.hovered:
@@ -480,21 +512,21 @@ class Node:
         icon_x = self.x + self.WIDTH - 20
         icon_y = self.y + self.HEIGHT_HEADER / 2
 
-        # Círculo de fundo amarelo
-        context.set_source_rgb(1.0, 0.85, 0.0)
-        context.arc(icon_x, icon_y, 10, 0, 2 * 3.14159)
+        # Círculo de fundo vermelho (mais visível)
+        context.set_source_rgb(1.0, 0.2, 0.2)
+        context.arc(icon_x, icon_y, 12, 0, 2 * 3.14159)
         context.fill()
 
-        # Borda preta
-        context.set_source_rgb(0, 0, 0)
-        context.set_line_width(1.5)
-        context.arc(icon_x, icon_y, 10, 0, 2 * 3.14159)
+        # Borda branca para contraste
+        context.set_source_rgb(1.0, 1.0, 1.0)
+        context.set_line_width(2)
+        context.arc(icon_x, icon_y, 12, 0, 2 * 3.14159)
         context.stroke()
 
-        # Símbolo "!" em preto
-        context.set_source_rgb(0, 0, 0)
+        # Símbolo "!" em branco
+        context.set_source_rgb(1.0, 1.0, 1.0)
         context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-        context.set_font_size(14)
+        context.set_font_size(16)
         extents = context.text_extents("!")
         context.move_to(icon_x - extents.width / 2, icon_y + extents.height / 2)
         context.show_text("!")
@@ -514,6 +546,42 @@ class Node:
 
         context.move_to(badge_x, badge_y + extents.height)
         context.show_text(badge_text)
+
+    def _draw_execution_state_badge(self, context):
+        """Desenha badge de estado de execução no canto inferior esquerdo"""
+        # Não desenhar se estiver completado (aparência normal)
+        if self.execution_state == NodeExecutionState.COMPLETED:
+            return
+
+        # Posição do badge
+        badge_x = self.x + 8
+        badge_y = self.y + self.total_height - 8
+
+        # Cor e texto baseado no estado
+        if self.execution_state == NodeExecutionState.IDLE:
+            color = (0.9, 0.6, 0.2)  # Laranja
+            text = "⏳"
+        elif self.execution_state == NodeExecutionState.RUNNING:
+            color = (0.2, 0.6, 1.0)  # Azul
+            text = "▶"
+        elif self.execution_state == NodeExecutionState.ERROR:
+            color = (1.0, 0.2, 0.2)  # Vermelho
+            text = "✖"
+        else:
+            return
+
+        # Desenhar círculo de fundo
+        context.set_source_rgba(*color, 0.3)
+        context.arc(badge_x, badge_y, 10, 0, 2 * 3.14159)
+        context.fill()
+
+        # Desenhar símbolo
+        context.set_source_rgb(*color)
+        context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        context.set_font_size(12)
+        extents = context.text_extents(text)
+        context.move_to(badge_x - extents.width / 2, badge_y + extents.height / 2)
+        context.show_text(text)
 
     def to_dict(self):
         """
