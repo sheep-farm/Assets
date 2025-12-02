@@ -150,14 +150,10 @@ class Node:
         # 4. Desenhar portas de saída (direita)
         self._draw_output_ports(context)
 
-        # 5. Desenhar borda (muda se selecionado/hover)
+        # 5. Desenhar borda (muda se selecionado/hover/estado)
         self._draw_border(context)
 
-        # 6. Desenhar indicador de seleção (se selecionado)
-        if self.selected:
-            self._draw_selection_indicator(context)
-
-        # 7. Desenhar badge de estado de execução
+        # 6. Desenhar badge de estado de execução
         self._draw_execution_state_badge(context)
 
     def _draw_rounded_rectangle(self, context, x, y, width, height, radius, top_left=True, top_right=True, bottom_right=True, bottom_left=True):
@@ -358,19 +354,31 @@ class Node:
         # Prioridade: erro > execução > seleção > hover > padrão
 
         if self.execution_state == NodeExecutionState.RUNNING:
-            # Executando: borda azul pulsante (mais grossa)
-            context.set_source_rgb(0.2, 0.6, 1.0)  # Azul vivo
-            context.set_line_width(4)
-            # Adicionar glow
-            context.set_source_rgba(0.2, 0.6, 1.0, 0.3)
+            # Executando: borda azul pulsante COM DUPLO GLOW
+            # Glow externo (mais transparente)
+            context.set_source_rgba(0.2, 0.6, 1.0, 0.15)
+            context.set_line_width(10)
             self._draw_rounded_rectangle(
-                context, self.x - 3, self.y - 3,
-                self.WIDTH + 6, self.total_height + 6,
-                self.BORDER_RADIUS + 2
+                context, self.x - 5, self.y - 5,
+                self.WIDTH + 10, self.total_height + 10,
+                self.BORDER_RADIUS + 3
             )
             context.stroke()
-            context.set_source_rgb(0.2, 0.6, 1.0)
-            context.set_line_width(4)
+
+            # Glow interno (mais forte)
+            context.set_source_rgba(0.2, 0.6, 1.0, 0.4)
+            context.set_line_width(6)
+            self._draw_rounded_rectangle(
+                context, self.x - 2, self.y - 2,
+                self.WIDTH + 4, self.total_height + 4,
+                self.BORDER_RADIUS + 1
+            )
+            context.stroke()
+
+            # Borda principal (sólida e grossa)
+            context.set_source_rgb(0.2, 0.6, 1.0)  # Azul vivo
+            context.set_line_width(3.5)
+
         elif self.execution_state == NodeExecutionState.COMPLETED:
             # Concluído: borda verde suave
             context.set_source_rgb(0.3, 0.7, 0.3)  # Verde
@@ -380,6 +388,18 @@ class Node:
             context.set_source_rgb(0.9, 0.6, 0.2)  # Laranja
             context.set_line_width(2)
         elif self.selected:
+            # Selecionado: borda azul COM GLOW
+            # Glow externo
+            context.set_source_rgba(0.2, 0.5, 1.0, 0.25)
+            context.set_line_width(8)
+            self._draw_rounded_rectangle(
+                context, self.x - 3, self.y - 3,
+                self.WIDTH + 6, self.total_height + 6,
+                self.BORDER_RADIUS + 2
+            )
+            context.stroke()
+
+            # Borda principal
             context.set_source_rgb(0.2, 0.5, 1.0)  # Azul brilhante
             context.set_line_width(3)
         elif self.hovered:

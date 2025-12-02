@@ -1028,10 +1028,22 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Obter referência à janela para acessar output_panel
         window = self.get_root()
 
+        # Obter output_panel do projeto atual (mais confiável)
+        output_panel = None
+        if hasattr(self, 'project_tab') and self.project_tab:
+            output_panel = self.project_tab.output_panel
+            print(f"✓ Usando output_panel do project_tab")
+        elif hasattr(window, 'output_panel'):
+            output_panel = window.output_panel
+            print(f"✓ Usando output_panel da window")
+        else:
+            print(f"⚠️  Nenhum output_panel encontrado!")
+
         # Limpar outputs anteriores antes de executar
         from gi.repository import GLib
-        if hasattr(window, 'output_panel'):
-            GLib.idle_add(window.output_panel.clear_all)
+        if output_panel:
+            print(f"🧹 Limpando output panel...")
+            GLib.idle_add(output_panel.clear_all)
 
         try:
             # 4. Executar cada nível em paralelo
@@ -1089,13 +1101,13 @@ class AssetsCanvas(Gtk.DrawingArea):
                         level_results.append((node, outputs))
 
                 # PROCESSAR outputs especiais na MAIN THREAD (fora do executor)
-                if hasattr(window, 'output_panel'):
+                if output_panel:
                     for node, outputs in level_results:
                         # Pular nós que falharam (outputs = None)
                         if outputs is None:
                             continue
                         for output in outputs:
-                            self._process_special_output(output, node, window.output_panel)
+                            self._process_special_output(output, node, output_panel)
 
             return True
 
