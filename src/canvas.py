@@ -112,6 +112,34 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         self.set_size_request(width, height)
 
+    def center_view_on_graph(self):
+        """Centraliza a visualização no grafo, independente do zoom/pan salvos"""
+        if not self.nodes:
+            return
+
+        # Calcular bounding box do grafo
+        min_x = min(node.x for node in self.nodes)
+        min_y = min(node.y for node in self.nodes)
+        max_x = max(node.x + node.WIDTH for node in self.nodes)
+        max_y = max(node.y + node.HEIGHT_HEADER + node.PADDING +
+                   max(node.num_inputs, node.num_outputs) * node.HEIGHT_PORT + node.PADDING
+                   for node in self.nodes)
+
+        # Centro do grafo
+        graph_center_x = (min_x + max_x) / 2
+        graph_center_y = (min_y + max_y) / 2
+
+        # Tamanho da viewport (widget)
+        widget_width = self.get_width()
+        widget_height = self.get_height()
+
+        # Calcular pan offset para centralizar
+        # O centro do grafo (em coordenadas de canvas) deve aparecer no centro da viewport
+        self.pan_offset_x = widget_width / 2 - graph_center_x * self.zoom_level
+        self.pan_offset_y = widget_height / 2 - graph_center_y * self.zoom_level
+
+        self.queue_draw()
+
     def _setup_mouse_events(self):
         """Configura controladores de eventos de mouse"""
 
@@ -863,6 +891,37 @@ class AssetsCanvas(Gtk.DrawingArea):
         #else:
          #   print("⚠️  Nenhum nó selecionado para duplicar")
 
+    def _cut_context_node(self):
+        """Recorta o nó do menu de contexto (copia e remove)"""
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            return
+
+        # Selecionar o nó do contexto (se não estiver)
+        if not self.context_menu_node.selected:
+            for node in self.nodes:
+                node.set_selected(False)
+            self.context_menu_node.set_selected(True)
+
+        # Copiar
+        self._copy_focused_node()
+
+        # Remover o nó
+        node_to_delete = self.context_menu_node
+
+        # Remover conexões associadas ao nó
+        self.connections = [
+            conn for conn in self.connections
+            if conn[0] != node_to_delete and conn[2] != node_to_delete
+        ]
+
+        # Remover o nó
+        if node_to_delete in self.nodes:
+            self.nodes.remove(node_to_delete)
+
+        self.context_menu_node = None
+        self._update_canvas_size()
+        self.queue_draw()
+
     def execute_graph(self):
         """
         Executa o grafo completo em ordem topológica com paralelização por níveis.
@@ -876,10 +935,12 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Limpar output_values e estado de erro de TODOS os nós antes de executar
         # Isso garante execução limpa sem resultados antigos
+        from .node import NodeExecutionState
         for node in self.nodes:
             node.output_values = {}
             node.has_error = False
             node.error_message = ""
+            node.execution_state = NodeExecutionState.IDLE
 
         # 1. Verificar se grafo tem ciclos
         execution_order = self._topological_sort()
@@ -916,12 +977,21 @@ class AssetsCanvas(Gtk.DrawingArea):
                 # Função para executar um nó
                 def execute_node_wrapper(node):
                     try:
+                        # Marcar nó como RUNNING
+                        node.execution_state = NodeExecutionState.RUNNING
+                        from gi.repository import GLib
+                        GLib.idle_add(self.queue_draw)
+
                         # Coletar inputs deste nó
                         with results_lock:
                             inputs = self._collect_node_inputs(node, node_results)
 
                         # Executar código do nó
                         outputs = self._execute_node_code(node, inputs)
+
+                        # Marcar nó como COMPLETED
+                        node.execution_state = NodeExecutionState.COMPLETED
+                        GLib.idle_add(self.queue_draw)
 
                         # Armazenar resultados (thread-safe)
                         with results_lock:
@@ -932,6 +1002,9 @@ class AssetsCanvas(Gtk.DrawingArea):
 
                     except Exception as e:
                         import traceback
+                        # Marcar nó como ERROR
+                        node.execution_state = NodeExecutionState.ERROR
+                        GLib.idle_add(self.queue_draw)
                         error_msg = f"❌ Erro ao executar {node.title}: {e}\n{traceback.format_exc()}"
                         return (node, None, error_msg)
 
@@ -1433,8 +1506,10 @@ print("__OUTPUT__:" + output_b64)
 
         except Exception as e:
             # Capturar erro e marcar nó
+            from .node import NodeExecutionState
             node.has_error = True
             node.error_message = str(e)
+            node.execution_state = NodeExecutionState.ERROR
 
             # Imprimir erro detalhado
             print(f"❌ ERRO em '{node.title}':")
@@ -1836,10 +1911,18 @@ print("__OUTPUT__:" + output_b64)
         menu.append("Edit Code", "canvas.edit-code")
         menu.append("Rename", "canvas.rename")
         menu.append("Properties", "canvas.properties")
+
+        # Seção de clipboard
+        clipboard_section = Gio.Menu()
+        clipboard_section.append("Copy", "canvas.copy")
+        clipboard_section.append("Cut", "canvas.cut")
+        clipboard_section.append("Paste", "canvas.paste")
+        menu.append_section(None, clipboard_section)
+
         menu.append("Save to Library", "canvas.save-to-library")
         menu.append("Delete", "canvas.delete")
 
-        print(f"✓ Menu criado com 4 itens")
+        print(f"✓ Menu criado com itens de clipboard")
 
         # Criar popover
         popover = Gtk.PopoverMenu()
