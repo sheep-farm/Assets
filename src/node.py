@@ -29,6 +29,7 @@ class Node:
     PORT_RADIUS = 8
     PORT_SPACING = 10
     PADDING = 10
+    BORDER_RADIUS = 8  # Raio das bordas arredondadas
 
     # Cores
     COLOR_HEADER = (0.2, 0.4, 0.8)  # Azul
@@ -159,19 +160,65 @@ class Node:
         # 7. Desenhar badge de estado de execução
         self._draw_execution_state_badge(context)
 
+    def _draw_rounded_rectangle(self, context, x, y, width, height, radius, top_left=True, top_right=True, bottom_right=True, bottom_left=True):
+        """
+        Desenha um retângulo com bordas arredondadas.
+
+        Args:
+            context: Cairo context
+            x, y: Posição do retângulo
+            width, height: Dimensões
+            radius: Raio das bordas
+            top_left, top_right, bottom_right, bottom_left: Quais cantos arredondar
+        """
+        # Começar do canto superior esquerdo
+        context.new_path()
+
+        # Canto superior esquerdo
+        if top_left:
+            context.arc(x + radius, y + radius, radius, 3.14159, 1.5 * 3.14159)
+        else:
+            context.move_to(x, y)
+
+        # Canto superior direito
+        if top_right:
+            context.arc(x + width - radius, y + radius, radius, 1.5 * 3.14159, 0)
+        else:
+            context.line_to(x + width, y)
+
+        # Canto inferior direito
+        if bottom_right:
+            context.arc(x + width - radius, y + height - radius, radius, 0, 0.5 * 3.14159)
+        else:
+            context.line_to(x + width, y + height)
+
+        # Canto inferior esquerdo
+        if bottom_left:
+            context.arc(x + radius, y + height - radius, radius, 0.5 * 3.14159, 3.14159)
+        else:
+            context.line_to(x, y + height)
+
+        context.close_path()
+
     def _draw_body(self, context):
-        """Desenha o corpo do nó (parte cinza)"""
+        """Desenha o corpo do nó (parte cinza) com cantos inferiores arredondados"""
         context.set_source_rgb(*self.COLOR_BODY)
-        context.rectangle(
+        self._draw_rounded_rectangle(
+            context,
             self.x,
             self.y + self.HEIGHT_HEADER,
             self.WIDTH,
-            self.body_height
+            self.body_height,
+            self.BORDER_RADIUS,
+            top_left=False,    # Canto superior esquerdo reto (conecta com header)
+            top_right=False,   # Canto superior direito reto (conecta com header)
+            bottom_right=True, # Canto inferior direito arredondado
+            bottom_left=True   # Canto inferior esquerdo arredondado
         )
         context.fill()
 
     def _draw_header(self, context):
-        """Desenha o header (parte azul com título)"""
+        """Desenha o header (parte azul com título) com cantos superiores arredondados"""
         # Retângulo do header - usar cor de erro, customizada ou padrão
         if self.has_error:
             context.set_source_rgb(0.8, 0.2, 0.2)  # Vermelho para erro
@@ -180,11 +227,17 @@ class Node:
         else:
             context.set_source_rgb(*self.COLOR_HEADER)
 
-        context.rectangle(
+        self._draw_rounded_rectangle(
+            context,
             self.x,
             self.y,
             self.WIDTH,
-            self.HEIGHT_HEADER
+            self.HEIGHT_HEADER,
+            self.BORDER_RADIUS,
+            top_left=True,     # Canto superior esquerdo arredondado
+            top_right=True,    # Canto superior direito arredondado
+            bottom_right=False, # Canto inferior direito reto (conecta com corpo)
+            bottom_left=False   # Canto inferior esquerdo reto (conecta com corpo)
         )
         context.fill()
 
@@ -301,7 +354,7 @@ class Node:
             self.output_ports.append((port_x, port_y))
 
     def _draw_border(self, context):
-        """Desenha borda ao redor do nó inteiro (muda com hover/seleção/estado)"""
+        """Desenha borda arredondada ao redor do nó inteiro (muda com hover/seleção/estado)"""
         # Prioridade: erro > execução > seleção > hover > padrão
 
         if self.execution_state == NodeExecutionState.RUNNING:
@@ -310,7 +363,11 @@ class Node:
             context.set_line_width(4)
             # Adicionar glow
             context.set_source_rgba(0.2, 0.6, 1.0, 0.3)
-            context.rectangle(self.x - 3, self.y - 3, self.WIDTH + 6, self.total_height + 6)
+            self._draw_rounded_rectangle(
+                context, self.x - 3, self.y - 3,
+                self.WIDTH + 6, self.total_height + 6,
+                self.BORDER_RADIUS + 2
+            )
             context.stroke()
             context.set_source_rgb(0.2, 0.6, 1.0)
             context.set_line_width(4)
@@ -332,24 +389,28 @@ class Node:
             context.set_source_rgb(*self.COLOR_BORDER)
             context.set_line_width(2)
 
-        context.rectangle(
+        self._draw_rounded_rectangle(
+            context,
             self.x,
             self.y,
             self.WIDTH,
-            self.total_height
+            self.total_height,
+            self.BORDER_RADIUS
         )
         context.stroke()
 
     def _draw_selection_indicator(self, context):
-        """Desenha indicador visual de que o nó está selecionado"""
+        """Desenha indicador visual arredondado de que o nó está selecionado"""
         # Brilho/glow ao redor quando selecionado
         context.set_source_rgba(0.2, 0.5, 1.0, 0.2)  # Azul semi-transparente
         context.set_line_width(8)
-        context.rectangle(
+        self._draw_rounded_rectangle(
+            context,
             self.x - 2,
             self.y - 2,
             self.WIDTH + 4,
-            self.total_height + 4
+            self.total_height + 4,
+            self.BORDER_RADIUS + 1
         )
         context.stroke()
 
