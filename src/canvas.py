@@ -48,6 +48,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.panning = False  # Está arrastando o canvas?
         self.pan_start_x = 0
         self.pan_start_y = 0
+        self.space_pressed = False  # Se a tecla Espaço está pressionada
 
         # Estado de seleção de região
         self.selecting_region = False  # Está selecionando região?
@@ -158,14 +159,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         drag_gesture.connect("drag-end", self.on_drag_end)
         self.add_controller(drag_gesture)
 
-        # Drag - botão direito (para panning)
-        pan_gesture = Gtk.GestureDrag.new()
-        pan_gesture.set_button(3)  # Botão direito
-        pan_gesture.connect("drag-begin", self.on_pan_begin)
-        pan_gesture.connect("drag-update", self.on_pan_update)
-        pan_gesture.connect("drag-end", self.on_pan_end)
-        self.add_controller(pan_gesture)
-
         # Motion (hover)
         motion_controller = Gtk.EventControllerMotion.new()
         motion_controller.connect("motion", self.on_mouse_motion)
@@ -187,6 +180,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Controlador de teclado
         key_controller = Gtk.EventControllerKey.new()
         key_controller.connect("key-pressed", self.on_key_pressed)
+        key_controller.connect("key-released", self.on_key_released)
         self.add_controller(key_controller)
 
         # Dar foco inicial ao canvas
@@ -236,13 +230,15 @@ class AssetsCanvas(Gtk.DrawingArea):
         ctrl_pressed = modifiers & Gdk.ModifierType.CONTROL_MASK
         shift_pressed = modifiers & Gdk.ModifierType.SHIFT_MASK
 
-        # Botão direito: menu de contexto se estiver sobre nó
+        # Botão direito: menu de contexto
         if button == 3:  # Botão direito
+            # Verificar se está sobre um nó
             for node in reversed(self.nodes):
                 if node.contains_point(canvas_x, canvas_y):
                     self._show_node_context_menu(node, x, y)
                     return
-            # Se não está sobre nó, o pan_gesture irá tratar
+            # Se não está sobre nó, mostrar menu de contexto do canvas
+            self._show_canvas_context_menu(x, y)
             return
 
         # Botão esquerdo: nova lógica
@@ -548,6 +544,13 @@ class AssetsCanvas(Gtk.DrawingArea):
             bool: True se processou a tecla (impede propagação)
         """
 
+        # Espaço - Ativar modo de pan
+        if keyval == Gdk.KEY_space:
+            if not self.space_pressed:
+                self.space_pressed = True
+                self.set_cursor(Gdk.Cursor.new_from_name("grab"))
+            return True
+
         # Verificar se Ctrl está pressionado
         ctrl_pressed = state & Gdk.ModifierType.CONTROL_MASK
 
@@ -651,6 +654,30 @@ class AssetsCanvas(Gtk.DrawingArea):
                 return True
 
         return False  # Não processou - deixa propagar
+
+    def on_key_released(self, controller, keyval, keycode, state):
+        """
+        Processa teclas soltas.
+
+        Args:
+            controller: EventControllerKey
+            keyval: Valor da tecla (Gdk.KEY_*)
+            keycode: Código da tecla
+            state: Modificadores
+
+        Returns:
+            bool: True se processou a tecla
+        """
+        # Espaço - Desativar modo de pan
+        if keyval == Gdk.KEY_space:
+            self.space_pressed = False
+            # Finalizar panning se estiver ativo
+            if self.panning:
+                self.panning = False
+            self.set_cursor(None)  # Restaurar cursor padrão
+            return True
+
+        return False
 
     def _focus_next_node(self):
         """Move foco para o próximo nó (TAB)"""
@@ -1586,10 +1613,19 @@ print("__OUTPUT__:" + output_b64)
 
     def on_drag_begin(self, gesture, start_x, start_y):
         """Quando começa a arrastar"""
+        canvas_x, canvas_y = self._screen_to_canvas(start_x, start_y)
+
+        # Se Espaço está pressionado, ativar panning
+        if self.space_pressed:
+            self.panning = True
+            self.pan_start_x = start_x - self.pan_offset_x
+            self.pan_start_y = start_y - self.pan_offset_y
+            self.set_cursor(Gdk.Cursor.new_from_name("grabbing"))
+            return
+
         # Capturar estado para undo (só se arrastar nós)
         if self._recording_undo:
             self._drag_old_state = self.undo_manager.capture_state()
-        canvas_x, canvas_y = self._screen_to_canvas(start_x, start_y)
 
         # Verificar modificadores
         modifiers = gesture.get_current_event_state()
@@ -1620,6 +1656,15 @@ print("__OUTPUT__:" + output_b64)
         """Enquanto arrasta"""
         # Pegar posição inicial do drag
         (_, start_x, start_y) = gesture.get_start_point()
+
+        # Se está fazendo panning, atualizar offset
+        if self.panning:
+            current_x = start_x + offset_x
+            current_y = start_y + offset_y
+            self.pan_offset_x = current_x - self.pan_start_x
+            self.pan_offset_y = current_y - self.pan_start_y
+            self.queue_draw()
+            return
 
         # Se está selecionando região, atualizar o retângulo
         if self.selecting_region:
@@ -1660,6 +1705,16 @@ print("__OUTPUT__:" + output_b64)
 
     def on_drag_end(self, gesture, offset_x, offset_y):
         """Quando termina de arrastar"""
+        # Se estava fazendo panning, finalizar
+        if self.panning:
+            self.panning = False
+            # Manter cursor como "grab" se espaço ainda estiver pressionado
+            if self.space_pressed:
+                self.set_cursor(Gdk.Cursor.new_from_name("grab"))
+            else:
+                self.set_cursor(None)
+            return
+
         # Se estava selecionando região, selecionar nós dentro do retângulo
         if self.selecting_region:
             self._select_nodes_in_region()
@@ -1682,39 +1737,6 @@ print("__OUTPUT__:" + output_b64)
 
             self._update_canvas_size()
             self.queue_draw()
-
-    def on_pan_begin(self, gesture, start_x, start_y):
-        """Quando começa a fazer pan com botão direito"""
-        # Verificar se está sobre um nó - se sim, não fazer pan (menu de contexto)
-        canvas_x, canvas_y = self._screen_to_canvas(start_x, start_y)
-        for node in reversed(self.nodes):
-            if node.contains_point(canvas_x, canvas_y):
-                # Está sobre um nó, não iniciar pan
-                return
-
-        # Não está sobre nó, iniciar pan
-        self.panning = True
-        self.pan_start_x = start_x - self.pan_offset_x
-        self.pan_start_y = start_y - self.pan_offset_y
-        # Mudar cursor para mãozinha (grabbing)
-        self.set_cursor(Gdk.Cursor.new_from_name("grabbing"))
-
-    def on_pan_update(self, gesture, offset_x, offset_y):
-        """Enquanto faz pan com botão direito"""
-        if self.panning:
-            (_, start_x, start_y) = gesture.get_start_point()
-            current_x = start_x + offset_x
-            current_y = start_y + offset_y
-            self.pan_offset_x = current_x - self.pan_start_x
-            self.pan_offset_y = current_y - self.pan_start_y
-            self.queue_draw()
-
-    def on_pan_end(self, gesture, offset_x, offset_y):
-        """Quando termina de fazer pan"""
-        if self.panning:
-            self.panning = False
-            # Restaurar cursor padrão
-            self.set_cursor(None)
 
     def on_mouse_motion(self, controller, x, y):
         """Quando o mouse se move (para hover)"""
@@ -1759,21 +1781,40 @@ print("__OUTPUT__:" + output_b64)
         context.translate(self.pan_offset_x, self.pan_offset_y)
         context.scale(self.zoom_level, self.zoom_level)
 
-        # Grid de fundo sutil (ajustado para zoom)
-        context.set_source_rgb(0.96, 0.96, 0.96)
-        context.set_line_width(1 / self.zoom_level)  # Linha sempre fina
+        # Grid de fundo com dois níveis (blueprint style)
+        small_grid_size = 20  # Grid fino (menor)
+        large_grid_size = 100  # Grid grosso (maior) - a cada 5 linhas finas
 
-        grid_size = 20
         # Calcular limites visíveis do grid
-        start_x = int(-self.pan_offset_x / self.zoom_level / grid_size) * grid_size
-        start_y = int(-self.pan_offset_y / self.zoom_level / grid_size) * grid_size
-        end_x = int((width - self.pan_offset_x) / self.zoom_level) + grid_size
-        end_y = int((height - self.pan_offset_y) / self.zoom_level) + grid_size
+        start_x = int(-self.pan_offset_x / self.zoom_level / small_grid_size) * small_grid_size
+        start_y = int(-self.pan_offset_y / self.zoom_level / small_grid_size) * small_grid_size
+        end_x = int((width - self.pan_offset_x) / self.zoom_level) + small_grid_size
+        end_y = int((height - self.pan_offset_y) / self.zoom_level) + small_grid_size
 
-        for x in range(start_x, end_x, grid_size):
+        # Desenhar grid FINO primeiro (mais claro)
+        context.set_source_rgb(0.96, 0.96, 0.96)  # Cinza muito claro
+        context.set_line_width(0.5 / self.zoom_level)  # Linha bem fina
+
+        for x in range(start_x, end_x, small_grid_size):
+            # Pular as linhas que serão grossas
+            if x % large_grid_size != 0:
+                context.move_to(x, start_y)
+                context.line_to(x, end_y)
+        for y in range(start_y, end_y, small_grid_size):
+            # Pular as linhas que serão grossas
+            if y % large_grid_size != 0:
+                context.move_to(start_x, y)
+                context.line_to(end_x, y)
+        context.stroke()
+
+        # Desenhar grid GROSSO por cima (mais escuro)
+        context.set_source_rgb(0.90, 0.90, 0.90)  # Cinza um pouco mais escuro
+        context.set_line_width(1.5 / self.zoom_level)  # Linha mais grossa
+
+        for x in range(start_x, end_x, large_grid_size):
             context.move_to(x, start_y)
             context.line_to(x, end_y)
-        for y in range(start_y, end_y, grid_size):
+        for y in range(start_y, end_y, large_grid_size):
             context.move_to(start_x, y)
             context.line_to(end_x, y)
         context.stroke()
@@ -1813,7 +1854,7 @@ print("__OUTPUT__:" + output_b64)
         context.set_source_rgb(0.3, 0.3, 0.3)
         context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
         context.set_font_size(11)
-        info_text = f"Zoom: {self.zoom_level * 100:.0f}% | Pan: ({self.pan_offset_x:.0f}, {self.pan_offset_y:.0f}) | Scroll para zoom, Arraste vazio para pan"
+        info_text = f"Zoom: {self.zoom_level * 100:.0f}% | Pan: ({self.pan_offset_x:.0f}, {self.pan_offset_y:.0f}) | Scroll: zoom | Space+Drag: pan | Right-click: menu"
         context.move_to(10, height - 10)
         context.show_text(info_text)
 
@@ -1846,10 +1887,10 @@ print("__OUTPUT__:" + output_b64)
                 # Cor e largura diferentes se está selecionada
                 if is_selected:
                     context.set_line_width(4 / self.zoom_level)
-                    context.set_source_rgba(1.0, 0.3, 0.3, 0.9)  # Vermelho para selecionada
+                    context.set_source_rgba(1.0, 0.4, 0.2, 0.95)  # Laranja vibrante para selecionada
                 else:
                     context.set_line_width(3 / self.zoom_level)
-                    context.set_source_rgba(0.3, 0.6, 0.9, 0.6)  # Azul normal, mais transparente
+                    context.set_source_rgba(0.35, 0.45, 0.55, 0.75)  # Azul ardósia suave - discreto mas visível
 
                 self._draw_connection(context, start, end)
 
@@ -1857,9 +1898,9 @@ print("__OUTPUT__:" + output_b64)
         if selected_only and self.creating_connection and self.connection_start_node:
             start = self.connection_start_node.get_output_port_position(self.connection_start_port)
             if start:
-                # Linha temporária em cor diferente (verde)
+                # Linha temporária em cor diferente (verde esmeralda)
                 context.set_line_width(3)
-                context.set_source_rgba(0.3, 0.8, 0.3, 0.7)  # Verde semi-transparente
+                context.set_source_rgba(0.2, 0.7, 0.5, 0.8)  # Verde esmeralda semi-transparente
                 self._draw_connection(context, start, self.connection_mouse_pos)
 
     def _draw_connection(self, context, start, end):
@@ -1946,6 +1987,35 @@ print("__OUTPUT__:" + output_b64)
         # Mostrar menu
         popover.popup()
         print(f"✓ popup() chamado")
+
+    def _show_canvas_context_menu(self, x, y):
+        """Mostra menu de contexto para o canvas vazio"""
+        menu = Gio.Menu()
+
+        # Opção de colar (se há algo no clipboard)
+        window = self.get_root()
+        if window and window.clipboard_nodes:
+            menu.append("Paste", "canvas.paste")
+
+        # Se menu está vazio, não mostrar
+        if menu.get_n_items() == 0:
+            return
+
+        # Criar popover
+        popover = Gtk.PopoverMenu()
+        popover.set_menu_model(menu)
+        popover.set_parent(self)
+
+        # Usar Gdk.Rectangle para posicionar no ponto do clique
+        rect = Gdk.Rectangle()
+        rect.x = int(x)
+        rect.y = int(y)
+        rect.width = 1
+        rect.height = 1
+        popover.set_pointing_to(rect)
+
+        # Mostrar menu
+        popover.popup()
 
     def _show_multi_selection_menu(self, x, y):
         """Mostra menu de contexto para múltipla seleção"""

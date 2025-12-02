@@ -557,16 +557,13 @@ class Node:
         badge_x = self.x + 8
         badge_y = self.y + self.total_height - 8
 
-        # Cor e texto baseado no estado
+        # Cor baseada no estado
         if self.execution_state == NodeExecutionState.IDLE:
             color = (0.9, 0.6, 0.2)  # Laranja
-            text = "⏳"
         elif self.execution_state == NodeExecutionState.RUNNING:
             color = (0.2, 0.6, 1.0)  # Azul
-            text = "▶"
         elif self.execution_state == NodeExecutionState.ERROR:
             color = (1.0, 0.2, 0.2)  # Vermelho
-            text = "✖"
         else:
             return
 
@@ -575,13 +572,40 @@ class Node:
         context.arc(badge_x, badge_y, 10, 0, 2 * 3.14159)
         context.fill()
 
-        # Desenhar símbolo
+        # Desenhar símbolo baseado no estado
         context.set_source_rgb(*color)
-        context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-        context.set_font_size(12)
-        extents = context.text_extents(text)
-        context.move_to(badge_x - extents.width / 2, badge_y + extents.height / 2)
-        context.show_text(text)
+
+        if self.execution_state == NodeExecutionState.IDLE:
+            # Desenhar relógio (círculo com ponteiros)
+            context.set_line_width(1.5)
+            context.arc(badge_x, badge_y, 6, 0, 2 * 3.14159)
+            context.stroke()
+            # Ponteiro curto (horas)
+            context.move_to(badge_x, badge_y)
+            context.line_to(badge_x + 3, badge_y - 2)
+            context.stroke()
+            # Ponteiro longo (minutos)
+            context.move_to(badge_x, badge_y)
+            context.line_to(badge_x, badge_y - 4)
+            context.stroke()
+
+        elif self.execution_state == NodeExecutionState.RUNNING:
+            # Desenhar triângulo play
+            context.move_to(badge_x - 3, badge_y - 4)
+            context.line_to(badge_x - 3, badge_y + 4)
+            context.line_to(badge_x + 4, badge_y)
+            context.close_path()
+            context.fill()
+
+        elif self.execution_state == NodeExecutionState.ERROR:
+            # Desenhar X
+            context.set_line_width(2)
+            context.move_to(badge_x - 4, badge_y - 4)
+            context.line_to(badge_x + 4, badge_y + 4)
+            context.stroke()
+            context.move_to(badge_x + 4, badge_y - 4)
+            context.line_to(badge_x - 4, badge_y + 4)
+            context.stroke()
 
     def to_dict(self):
         """
