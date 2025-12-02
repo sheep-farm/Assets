@@ -35,7 +35,6 @@ assets_sources = [
   'window.py',
   'canvas.py',
   'yahoo_request.py',
-  'fred_request.py',
   'node.py',
   'node_library.py',
   'node_dialogs.py',
