@@ -276,6 +276,19 @@ class AssetsWindow(Adw.ApplicationWindow):
         delete_action.connect("activate", lambda a, p: canvas.delete_context_node())
         canvas.action_group.add_action(delete_action)
 
+        # Clipboard actions
+        copy_action = Gio.SimpleAction.new("copy", None)
+        copy_action.connect("activate", lambda a, p: canvas._copy_focused_node())
+        canvas.action_group.add_action(copy_action)
+
+        cut_action = Gio.SimpleAction.new("cut", None)
+        cut_action.connect("activate", lambda a, p: canvas._cut_context_node())
+        canvas.action_group.add_action(cut_action)
+
+        paste_action = Gio.SimpleAction.new("paste", None)
+        paste_action.connect("activate", lambda a, p: canvas._paste_node())
+        canvas.action_group.add_action(paste_action)
+
         # Alignment actions
         align_left = Gio.SimpleAction.new("align-left", None)
         align_left.connect("activate", lambda a, p: canvas.align_selected_nodes("left"))
@@ -601,30 +614,15 @@ class AssetsWindow(Adw.ApplicationWindow):
                     for node in nodes:
                         node._calculate_port_positions()
 
-                    # Restaurar estado visual se disponível
-                    view_state = graph_data.get("view_state")
-                    if view_state:
-                        # Restaurar zoom
-                        project.canvas.zoom_level = view_state.get("zoom", 1.0)
+                    # Update canvas size based on nodes and zoom
+                    project.canvas._update_canvas_size()
 
-                        # Update canvas size based on nodes and zoom
-                        project.canvas._update_canvas_size()
-
-                        # Restaurar posição do scroll após um pequeno delay
-                        # (necessário para que os adjustments sejam configurados)
-                        from gi.repository import GLib
-                        def restore_scroll():
-                            hadj = project.scrolled_window.get_hadjustment()
-                            vadj = project.scrolled_window.get_vadjustment()
-                            if hadj:
-                                hadj.set_value(view_state.get("scroll_x", 0))
-                            if vadj:
-                                vadj.set_value(view_state.get("scroll_y", 0))
-                            return False
-                        GLib.timeout_add(100, restore_scroll)
-                    else:
-                        # Update canvas size based on nodes and zoom
-                        project.canvas._update_canvas_size()
+                    # SEMPRE centralizar o grafo ao abrir, independente do zoom/pan salvos
+                    from gi.repository import GLib
+                    def center_graph():
+                        project.canvas.center_view_on_graph()
+                        return False
+                    GLib.timeout_add(100, center_graph)
 
                     project.canvas.queue_draw()
 
