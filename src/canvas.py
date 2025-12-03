@@ -22,6 +22,21 @@ class AssetsCanvas(Gtk.DrawingArea):
         super().__init__()
         self.set_draw_func(self.on_draw)
 
+        # Inicializar GSettings para cores
+        try:
+            from pathlib import Path
+            import os
+            # Para desenvolvimento: usar schema local se não instalado
+            schema_dir = Path(__file__).parent.parent / "data"
+            if schema_dir.exists():
+                os.environ['GSETTINGS_SCHEMA_DIR'] = str(schema_dir)
+
+            self.settings = Gio.Settings.new("com.github.sheep.farm.assets")
+            self.settings.connect("changed", self._on_settings_changed)
+        except Exception as e:
+            print(f"Warning: Could not load GSettings: {e}")
+            self.settings = None
+
         # Criar alguns nós de exemplo
         self.nodes = []
 
@@ -90,6 +105,71 @@ class AssetsCanvas(Gtk.DrawingArea):
         # print("  - Ctrl+C para copiar")
         # print("  - Ctrl+V para colar")
         # print("  - Ctrl+D para duplicar")
+
+    def _on_settings_changed(self, settings, key):
+        """Callback quando uma configuração muda"""
+        # Redesenhar canvas quando cores mudarem
+        self.queue_draw()
+
+    def _get_color_setting(self, key):
+        """
+        Obtém uma cor do GSettings
+
+        Args:
+            key: Chave da configuração (ex: "canvas-bg-color")
+
+        Returns:
+            Tupla (r, g, b) com valores 0.0-1.0
+        """
+        # Valores padrão caso GSettings não esteja disponível
+        defaults = {
+            "canvas-bg-color": (0.98, 0.98, 0.98),
+            "fine-grid-color": (0.96, 0.96, 0.96),
+            "coarse-grid-color": (0.90, 0.90, 0.90),
+            "node-body-color": (0.95, 0.95, 0.95),
+            "node-border-color": (0.3, 0.3, 0.3),
+            "node-selection-color": (0.2, 0.6, 1.0),
+            "node-running-color": (0.2, 0.7, 0.5),
+            "connection-creating-color": (0.2, 0.7, 0.5),
+            "connection-normal-color": (0.35, 0.45, 0.55),
+            "connection-selected-color": (1.0, 0.4, 0.2),
+            "selection-fill-color": (0.2, 0.5, 0.9),
+            "selection-border-color": (0.2, 0.5, 0.9),
+        }
+
+        if self.settings:
+            try:
+                variant = self.settings.get_value(key)
+                return variant.unpack()
+            except Exception as e:
+                print(f"Warning: Could not get setting {key}: {e}")
+                return defaults.get(key, (0.5, 0.5, 0.5))
+        else:
+            return defaults.get(key, (0.5, 0.5, 0.5))
+
+    def _get_opacity_setting(self, key):
+        """
+        Obtém uma opacidade do GSettings
+
+        Args:
+            key: Chave da configuração (ex: "selection-fill-opacity")
+
+        Returns:
+            Float 0.0-1.0
+        """
+        defaults = {
+            "selection-fill-opacity": 0.15,
+            "selection-border-opacity": 0.6,
+        }
+
+        if self.settings:
+            try:
+                return self.settings.get_double(key)
+            except Exception as e:
+                print(f"Warning: Could not get setting {key}: {e}")
+                return defaults.get(key, 0.5)
+        else:
+            return defaults.get(key, 0.5)
 
     def _update_canvas_size(self):
         """Atualiza o tamanho do canvas baseado nos nós e zoom"""
@@ -1849,8 +1929,9 @@ print("__OUTPUT__:" + output_b64)
 
     def on_draw(self, area, context, width, height):
         """Desenha o canvas e todos os nós"""
-        # Fundo branco
-        context.set_source_rgb(1, 1, 1)
+        # Fundo com cor configurável
+        bg_color = self._get_color_setting("canvas-bg-color")
+        context.set_source_rgb(*bg_color)
         context.paint()
 
         # Salvar estado do contexto
@@ -1871,8 +1952,10 @@ print("__OUTPUT__:" + output_b64)
         end_y = int((height - self.pan_offset_y) / self.zoom_level) + small_grid_size
 
         # Desenhar grid FINO primeiro (mais claro)
-        context.set_source_rgb(0.96, 0.96, 0.96)  # Cinza muito claro
-        context.set_line_width(0.5 / self.zoom_level)  # Linha bem fina
+        fine_grid_color = self._get_color_setting("fine-grid-color")
+        context.set_source_rgb(*fine_grid_color)
+        # Linha fina com largura constante na tela (não escala com zoom)
+        context.set_line_width(0.5 / self.zoom_level)
 
         for x in range(start_x, end_x, small_grid_size):
             # Pular as linhas que serão grossas
@@ -1887,8 +1970,10 @@ print("__OUTPUT__:" + output_b64)
         context.stroke()
 
         # Desenhar grid GROSSO por cima (mais escuro)
-        context.set_source_rgb(0.90, 0.90, 0.90)  # Cinza um pouco mais escuro
-        context.set_line_width(1.5 / self.zoom_level)  # Linha mais grossa
+        coarse_grid_color = self._get_color_setting("coarse-grid-color")
+        context.set_source_rgb(*coarse_grid_color)
+        # Linha grossa com largura constante na tela (não escala com zoom)
+        context.set_line_width(1.0 / self.zoom_level)
 
         for x in range(start_x, end_x, large_grid_size):
             context.move_to(x, start_y)
@@ -1901,9 +1986,17 @@ print("__OUTPUT__:" + output_b64)
         # Desenhar conexões não selecionadas primeiro (atrás dos nós)
         self._draw_connections(context, selected_only=False)
 
+        # Preparar cores do tema para os nós
+        theme_colors = {
+            'node_body': self._get_color_setting("node-body-color"),
+            'node_border': self._get_color_setting("node-border-color"),
+            'node_selection': self._get_color_setting("node-selection-color"),
+            'node_running': self._get_color_setting("node-running-color"),
+        }
+
         # Desenhar todos os nós
         for node in self.nodes:
-            node.draw(context)
+            node.draw(context, theme_colors)
 
         # Desenhar conexões selecionadas por cima
         self._draw_connections(context, selected_only=True)
@@ -1916,12 +2009,16 @@ print("__OUTPUT__:" + output_b64)
             y2 = max(self.selection_start_y, self.selection_current_y)
 
             # Retângulo preenchido semi-transparente
-            context.set_source_rgba(0.2, 0.5, 0.9, 0.15)
+            selection_fill_color = self._get_color_setting("selection-fill-color")
+            selection_fill_opacity = self._get_opacity_setting("selection-fill-opacity")
+            context.set_source_rgba(*selection_fill_color, selection_fill_opacity)
             context.rectangle(x1, y1, x2 - x1, y2 - y1)
             context.fill()
 
             # Borda do retângulo
-            context.set_source_rgba(0.2, 0.5, 0.9, 0.6)
+            selection_border_color = self._get_color_setting("selection-border-color")
+            selection_border_opacity = self._get_opacity_setting("selection-border-opacity")
+            context.set_source_rgba(*selection_border_color, selection_border_opacity)
             context.set_line_width(1.5 / self.zoom_level)
             context.rectangle(x1, y1, x2 - x1, y2 - y1)
             context.stroke()
@@ -1966,10 +2063,12 @@ print("__OUTPUT__:" + output_b64)
                 # Cor e largura diferentes se está selecionada
                 if is_selected:
                     context.set_line_width(4 / self.zoom_level)
-                    context.set_source_rgba(1.0, 0.4, 0.2, 0.95)  # Laranja vibrante para selecionada
+                    selected_color = self._get_color_setting("connection-selected-color")
+                    context.set_source_rgba(*selected_color, 0.95)
                 else:
                     context.set_line_width(3 / self.zoom_level)
-                    context.set_source_rgba(0.35, 0.45, 0.55, 0.75)  # Azul ardósia suave - discreto mas visível
+                    normal_color = self._get_color_setting("connection-normal-color")
+                    context.set_source_rgba(*normal_color, 0.75)
 
                 self._draw_connection(context, start, end)
 
@@ -1977,9 +2076,10 @@ print("__OUTPUT__:" + output_b64)
         if selected_only and self.creating_connection and self.connection_start_node:
             start = self.connection_start_node.get_output_port_position(self.connection_start_port)
             if start:
-                # Linha temporária em cor diferente (verde esmeralda)
+                # Linha temporária em cor diferente
                 context.set_line_width(3)
-                context.set_source_rgba(0.2, 0.7, 0.5, 0.8)  # Verde esmeralda semi-transparente
+                creating_color = self._get_color_setting("connection-creating-color")
+                context.set_source_rgba(*creating_color, 0.8)
                 self._draw_connection(context, start, self.connection_mouse_pos)
 
     def _draw_connection(self, context, start, end):

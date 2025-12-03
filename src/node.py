@@ -121,6 +121,9 @@ class Node:
         self.last_execution_time = 0.0  # Tempo da última execução em segundos
         self.total_executions = 0       # Contador de execuções
 
+        # Theme colors (preenchido durante draw)
+        self._theme_colors = {}
+
     @property
     def code(self):
         """Retorna o código Python do nó"""
@@ -131,13 +134,17 @@ class Node:
         """Define o código Python do nó."""
         self._code = value
 
-    def draw(self, context):
+    def draw(self, context, theme_colors=None):
         """
         Desenha o nó no canvas usando Cairo.
 
         Args:
             context: Cairo context
+            theme_colors: Dicionário opcional com cores do tema
         """
+        # Armazenar cores do tema para uso nos métodos de desenho
+        self._theme_colors = theme_colors or {}
+
         # 1. Desenhar corpo (fundo)
         self._draw_body(context)
 
@@ -198,7 +205,8 @@ class Node:
 
     def _draw_body(self, context):
         """Desenha o corpo do nó (parte cinza) com cantos inferiores arredondados"""
-        context.set_source_rgb(*self.COLOR_BODY)
+        body_color = self._theme_colors.get('node_body', self.COLOR_BODY)
+        context.set_source_rgb(*body_color)
         self._draw_rounded_rectangle(
             context,
             self.x,
@@ -278,7 +286,8 @@ class Node:
             context.fill()
 
             # Borda da bolinha
-            context.set_source_rgb(*self.COLOR_BORDER)
+            border_color = self._theme_colors.get('node_border', self.COLOR_BORDER)
+            context.set_source_rgb(*border_color)
             context.set_line_width(2)
             context.arc(port_x, port_y, self.PORT_RADIUS, 0, 2 * 3.14159)
             context.stroke()
@@ -314,7 +323,8 @@ class Node:
             context.fill()
 
             # Borda da bolinha
-            context.set_source_rgb(*self.COLOR_BORDER)
+            border_color = self._theme_colors.get('node_border', self.COLOR_BORDER)
+            context.set_source_rgb(*border_color)
             context.set_line_width(2)
             context.arc(port_x, port_y, self.PORT_RADIUS, 0, 2 * 3.14159)
             context.stroke()
@@ -351,12 +361,13 @@ class Node:
 
     def _draw_border(self, context):
         """Desenha borda arredondada ao redor do nó inteiro (muda com hover/seleção/estado)"""
-        # Prioridade: erro > execução > seleção > hover > padrão
+        # Prioridade correta: execução ativa (running/completed) > seleção > hover > estado idle > padrão
 
         if self.execution_state == NodeExecutionState.RUNNING:
-            # Executando: borda azul pulsante COM DUPLO GLOW
+            # Executando: borda pulsante COM DUPLO GLOW
+            running_color = self._theme_colors.get('node_running', (0.2, 0.7, 0.5))
             # Glow externo (mais transparente)
-            context.set_source_rgba(0.2, 0.6, 1.0, 0.15)
+            context.set_source_rgba(*running_color, 0.15)
             context.set_line_width(10)
             self._draw_rounded_rectangle(
                 context, self.x - 5, self.y - 5,
@@ -366,7 +377,7 @@ class Node:
             context.stroke()
 
             # Glow interno (mais forte)
-            context.set_source_rgba(0.2, 0.6, 1.0, 0.4)
+            context.set_source_rgba(*running_color, 0.4)
             context.set_line_width(6)
             self._draw_rounded_rectangle(
                 context, self.x - 2, self.y - 2,
@@ -376,21 +387,14 @@ class Node:
             context.stroke()
 
             # Borda principal (sólida e grossa)
-            context.set_source_rgb(0.2, 0.6, 1.0)  # Azul vivo
+            context.set_source_rgb(*running_color)
             context.set_line_width(3.5)
 
-        elif self.execution_state == NodeExecutionState.COMPLETED:
-            # Concluído: borda verde suave
-            context.set_source_rgb(0.3, 0.7, 0.3)  # Verde
-            context.set_line_width(2.5)
-        elif self.execution_state == NodeExecutionState.IDLE:
-            # Aguardando: borda laranja suave
-            context.set_source_rgb(0.9, 0.6, 0.2)  # Laranja
-            context.set_line_width(2)
         elif self.selected:
-            # Selecionado: borda azul COM GLOW
+            # Selecionado: borda COM GLOW (prioridade sobre IDLE)
+            selection_color = self._theme_colors.get('node_selection', (0.2, 0.6, 1.0))
             # Glow externo
-            context.set_source_rgba(0.2, 0.5, 1.0, 0.25)
+            context.set_source_rgba(*selection_color, 0.25)
             context.set_line_width(8)
             self._draw_rounded_rectangle(
                 context, self.x - 3, self.y - 3,
@@ -400,13 +404,17 @@ class Node:
             context.stroke()
 
             # Borda principal
-            context.set_source_rgb(0.2, 0.5, 1.0)  # Azul brilhante
+            context.set_source_rgb(*selection_color)
             context.set_line_width(3)
+
         elif self.hovered:
             context.set_source_rgb(0.5, 0.5, 0.5)  # Cinza mais claro
             context.set_line_width(2.5)
+
         else:
-            context.set_source_rgb(*self.COLOR_BORDER)
+            # Padrão: usa borda configurável (inclui estado IDLE)
+            border_color = self._theme_colors.get('node_border', self.COLOR_BORDER)
+            context.set_source_rgb(*border_color)
             context.set_line_width(2)
 
         self._draw_rounded_rectangle(
@@ -630,10 +638,6 @@ class Node:
 
     def _draw_execution_state_badge(self, context):
         """Desenha badge de estado de execução no canto inferior esquerdo"""
-        # Não desenhar se estiver completado (aparência normal)
-        if self.execution_state == NodeExecutionState.COMPLETED:
-            return
-
         # Posição do badge
         badge_x = self.x + 8
         badge_y = self.y + self.total_height - 8
@@ -643,6 +647,8 @@ class Node:
             color = (0.9, 0.6, 0.2)  # Laranja
         elif self.execution_state == NodeExecutionState.RUNNING:
             color = (0.2, 0.6, 1.0)  # Azul
+        elif self.execution_state == NodeExecutionState.COMPLETED:
+            color = (0.3, 0.7, 0.3)  # Verde
         elif self.execution_state == NodeExecutionState.ERROR:
             color = (1.0, 0.2, 0.2)  # Vermelho
         else:
@@ -677,6 +683,14 @@ class Node:
             context.line_to(badge_x + 4, badge_y)
             context.close_path()
             context.fill()
+
+        elif self.execution_state == NodeExecutionState.COMPLETED:
+            # Desenhar check (✓)
+            context.set_line_width(2)
+            context.move_to(badge_x - 4, badge_y)
+            context.line_to(badge_x - 1, badge_y + 3)
+            context.line_to(badge_x + 4, badge_y - 4)
+            context.stroke()
 
         elif self.execution_state == NodeExecutionState.ERROR:
             # Desenhar X

@@ -43,6 +43,7 @@ else:
     print("  Run 'meson compile' for production build")
 
 from .window import AssetsWindow
+from .preferences_dialog import PreferencesDialog
 
 
 class AssetsApplication(Adw.Application):
@@ -81,7 +82,8 @@ class AssetsApplication(Adw.Application):
 
     def on_preferences_action(self, widget, _):
         """Callback for the app.preferences action."""
-        print('app.preferences action activated')
+        dialog = PreferencesDialog(self.props.active_window)
+        dialog.present()
 
     def create_action(self, name, callback, shortcuts=None):
         """Add an application action.

@@ -1,5 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="assets">
 	<schema id="com.github.sheep.farm.assets" path="/com/github/sheep/farm/assets/">
+		<!-- Canvas Background Colors -->
+		<key name="canvas-bg-color" type="(ddd)">
+			<default>(0.98, 0.98, 0.98)</default>
+			<summary>Canvas Background Color</summary>
+			<description>Main canvas background color (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="fine-grid-color" type="(ddd)">
+			<default>(0.96, 0.96, 0.96)</default>
+			<summary>Fine Grid Color</summary>
+			<description>Small grid lines color (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="coarse-grid-color" type="(ddd)">
+			<default>(0.90, 0.90, 0.90)</default>
+			<summary>Coarse Grid Color</summary>
+			<description>Large grid lines color (RGB, 0.0-1.0)</description>
+		</key>
+
+		<!-- Node Colors -->
+		<key name="node-body-color" type="(ddd)">
+			<default>(0.95, 0.95, 0.95)</default>
+			<summary>Node Body Color</summary>
+			<description>Background color of node body (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="node-border-color" type="(ddd)">
+			<default>(0.3, 0.3, 0.3)</default>
+			<summary>Node Border Color</summary>
+			<description>Color of node borders (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="node-selection-color" type="(ddd)">
+			<default>(0.2, 0.6, 1.0)</default>
+			<summary>Node Selection Color</summary>
+			<description>Outline color when node is selected (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="node-running-color" type="(ddd)">
+			<default>(0.2, 0.7, 0.5)</default>
+			<summary>Node Running Color</summary>
+			<description>Border color when node is executing (RGB, 0.0-1.0)</description>
+		</key>
+
+		<!-- Connection Colors -->
+		<key name="connection-creating-color" type="(ddd)">
+			<default>(0.2, 0.7, 0.5)</default>
+			<summary>Creating Connection Color</summary>
+			<description>Color when dragging to create connection (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="connection-normal-color" type="(ddd)">
+			<default>(0.35, 0.45, 0.55)</default>
+			<summary>Connected Line Color</summary>
+			<description>Color of established connections (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="connection-selected-color" type="(ddd)">
+			<default>(1.0, 0.4, 0.2)</default>
+			<summary>Selected Connection Color</summary>
+			<description>Color when connection is selected (RGB, 0.0-1.0)</description>
+		</key>
+
+		<!-- Selection Rectangle Colors -->
+		<key name="selection-fill-color" type="(ddd)">
+			<default>(0.2, 0.5, 0.9)</default>
+			<summary>Selection Fill Color</summary>
+			<description>Fill color of selection rectangle (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="selection-fill-opacity" type="d">
+			<default>0.15</default>
+			<summary>Selection Fill Opacity</summary>
+			<description>Transparency of selection rectangle fill (0.0-1.0)</description>
+		</key>
+		<key name="selection-border-color" type="(ddd)">
+			<default>(0.2, 0.5, 0.9)</default>
+			<summary>Selection Border Color</summary>
+			<description>Border color of selection rectangle (RGB, 0.0-1.0)</description>
+		</key>
+		<key name="selection-border-opacity" type="d">
+			<default>0.6</default>
+			<summary>Selection Border Opacity</summary>
+			<description>Transparency of selection rectangle border (0.0-1.0)</description>
+		</key>
 	</schema>
 </schemalist>

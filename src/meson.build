@@ -49,6 +49,7 @@ assets_sources = [
   'dependency_manager.py',
   'dependencies_dialog.py',
   'system_venv.py',
+  'preferences_dialog.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)
