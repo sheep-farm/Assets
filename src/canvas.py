@@ -74,6 +74,11 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Posição do menu de contexto (para paste na posição do mouse)
         self.context_menu_position = None
 
+        # Cache de cursores (evitar criar múltiplos cursores e esgotar file descriptors)
+        self._cursor_cache = {
+            'grab': Gdk.Cursor.new_from_name("grab"),
+            'grabbing': Gdk.Cursor.new_from_name("grabbing"),
+        }
 
         # print(f"✓ Canvas criado com {len(self.nodes)} nós")
         # print(f"✓ {len(self.connections)} conexões criadas")
@@ -551,7 +556,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         if keyval == Gdk.KEY_space:
             if not self.space_pressed:
                 self.space_pressed = True
-                self.set_cursor(Gdk.Cursor.new_from_name("grab"))
+                self.set_cursor(self._cursor_cache['grab'])
             return True
 
         # Verificar se Ctrl está pressionado
@@ -725,9 +730,38 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.queue_draw()
 
     def _delete_focused_node(self):
-        """Remove o nó que está com foco (Delete)"""
-        if 0 <= self.focused_node_index < len(self.nodes):
-            # Registrar estado antes da mudança
+        """Remove o(s) nó(s) selecionado(s) ou o nó com foco (Delete)"""
+        # Verificar se há múltiplos nós selecionados
+        selected_nodes = [node for node in self.nodes if node.selected]
+
+        if len(selected_nodes) > 1:
+            # Deletar todos os nós selecionados
+            if self._recording_undo:
+                old_state = self.undo_manager.capture_state()
+
+            # Remover conexões associadas a qualquer nó selecionado
+            self.connections = [
+                conn for conn in self.connections
+                if conn[0] not in selected_nodes and conn[2] not in selected_nodes
+            ]
+
+            # Remover todos os nós selecionados
+            for node in selected_nodes:
+                self.nodes.remove(node)
+
+            # Ajustar índice de foco
+            if self.focused_node_index >= len(self.nodes):
+                self.focused_node_index = len(self.nodes) - 1
+
+            # Registrar ação no undo
+            if self._recording_undo:
+                self.undo_manager.record_action(old_state)
+
+            self._update_canvas_size()
+            self.queue_draw()
+
+        elif 0 <= self.focused_node_index < len(self.nodes):
+            # Deletar apenas o nó com foco
             if self._recording_undo:
                 old_state = self.undo_manager.capture_state()
 
@@ -741,7 +775,6 @@ class AssetsCanvas(Gtk.DrawingArea):
 
             # Remover o nó
             self.nodes.remove(node_to_delete)
-          #  print(f"✗ Removido: {node_to_delete.title}")
 
             # Ajustar índice de foco
             if self.focused_node_index >= len(self.nodes):
@@ -1669,7 +1702,7 @@ print("__OUTPUT__:" + output_b64)
             self.panning = True
             self.pan_start_x = start_x - self.pan_offset_x
             self.pan_start_y = start_y - self.pan_offset_y
-            self.set_cursor(Gdk.Cursor.new_from_name("grabbing"))
+            self.set_cursor(self._cursor_cache['grabbing'])
             return
 
         # Capturar estado para undo (só se arrastar nós)
@@ -1687,8 +1720,9 @@ print("__OUTPUT__:" + output_b64)
         # Verificar se começou sobre um nó
         for node in reversed(self.nodes):
             if node.contains_point(canvas_x, canvas_y):
-                # Shift + há múltiplos selecionados: mover todos juntos
-                if shift_pressed and node.selected:
+                # Se o nó clicado está selecionado e há múltiplos selecionados: mover todos juntos
+                selected_count = sum(1 for n in self.nodes if n.selected)
+                if node.selected and selected_count > 1:
                     # Iniciar drag de todos os nós selecionados
                     for selected_node in self.nodes:
                         if selected_node.selected:
@@ -1732,15 +1766,11 @@ print("__OUTPUT__:" + output_b64)
             current_y = start_y + offset_y
             canvas_x, canvas_y = self._screen_to_canvas(current_x, current_y)
 
-            # Verificar modificadores
-            modifiers = gesture.get_current_event_state()
-            shift_pressed = modifiers & Gdk.ModifierType.SHIFT_MASK
-
             # Verificar quantos nós estão selecionados
             selected_count = sum(1 for node in self.nodes if node.selected)
 
-            if shift_pressed and selected_count > 1:
-                # Shift + múltiplos selecionados: mover todos
+            if selected_count > 1 and self.dragging_node.selected:
+                # Múltiplos selecionados: mover todos
                 for node in self.nodes:
                     if node.selected:
                         node.update_drag(canvas_x, canvas_y)
@@ -1759,7 +1789,7 @@ print("__OUTPUT__:" + output_b64)
             self.panning = False
             # Manter cursor como "grab" se espaço ainda estiver pressionado
             if self.space_pressed:
-                self.set_cursor(Gdk.Cursor.new_from_name("grab"))
+                self.set_cursor(self._cursor_cache['grab'])
             else:
                 self.set_cursor(None)
             return
