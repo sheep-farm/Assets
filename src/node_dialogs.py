@@ -4,7 +4,7 @@ node_dialogs.py - Dialogs para edição de nós (Adwaita-style)
 """
 
 import gi
-from gi.repository import Gtk, Adw, Gio, GtkSource
+from gi.repository import Gtk, Adw, Gio, GtkSource, Gdk
 
 
 class CodeEditorDialog(Adw.Window):
@@ -14,7 +14,9 @@ class CodeEditorDialog(Adw.Window):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
-        self.set_default_size(700, 500)
+
+        # Maximizar a janela
+        self.maximize()
 
         self.node = node
 
@@ -104,8 +106,28 @@ class CodeEditorDialog(Adw.Window):
 
         self.set_content(main_box)
 
+        # Configurar atalhos de teclado
+        key_controller = Gtk.EventControllerKey()
+        key_controller.connect("key-pressed", self._on_key_pressed)
+        self.add_controller(key_controller)
+
         # Dar foco ao editor
         self.text_view.grab_focus()
+
+    def _on_key_pressed(self, controller, keyval, keycode, state):
+        """Callback para teclas pressionadas"""
+        # ESC: Fechar sem aplicar
+        if keyval == Gdk.KEY_Escape:
+            self.close()
+            return True
+
+        # Ctrl+S: Aplicar e fechar
+        if keyval == Gdk.KEY_s or keyval == Gdk.KEY_S:
+            if state & Gdk.ModifierType.CONTROL_MASK:
+                self._on_apply(None)
+                return True
+
+        return False
 
     def _on_apply(self, button):
         """Callback do botão Apply"""
@@ -567,7 +589,6 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
 
         self.color_button = Gtk.ColorButton()
         if self.node.custom_color:
-            from gi.repository import Gdk
             rgba = Gdk.RGBA()
             rgba.red, rgba.green, rgba.blue = self.node.custom_color
             rgba.alpha = 1.0

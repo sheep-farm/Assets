@@ -832,6 +832,38 @@ class AssetsCanvas(Gtk.DrawingArea):
                 self.toggle_focus_node(node)
                 return True
 
+        # F5 - Executar grafo (em background thread como o botão Run)
+        if keyval == Gdk.KEY_F5:
+            import threading
+            from gi.repository import GLib
+
+            window = self.get_root()
+            if window and hasattr(window, 'current_tab'):
+                current_project = window.current_tab
+
+                # Verificar se ambiente está pronto
+                if not current_project.environment_ready:
+                    print("⏳ Environment is still loading, please wait...")
+                    return True
+
+                def run_in_background():
+                    success = self.execute_graph()
+                    def finish():
+                        if success:
+                            print("=" * 60)
+                            print("✅ EXECUTION COMPLETED SUCCESSFULLY (F5)")
+                            print("=" * 60 + "\n")
+                        else:
+                            print("=" * 60)
+                            print("❌ EXECUTION FAILED (F5)")
+                            print("=" * 60 + "\n")
+                        return False
+                    GLib.idle_add(finish)
+
+                thread = threading.Thread(target=run_in_background, daemon=True)
+                thread.start()
+            return True
+
         # Escape - Limpar focus mode
         if keyval == Gdk.KEY_Escape:
             if self.focus_node:
@@ -2475,8 +2507,49 @@ print("__OUTPUT__:" + output_b64)
     def _on_code_editor_apply(self, node, new_code):
         """Callback quando código é aplicado"""
         node.code = new_code
+
+        # Garantir que o nó na lista também seja atualizado
+        for n in self.nodes:
+            if n.id == node.id:
+                n._code = new_code
+                break
+
         print(f"✓ Code updated: {node.title}")
         self.queue_draw()
+
+        # Auto-save se o projeto tiver um arquivo associado
+        window = self.get_root()
+        if window and hasattr(window, 'current_tab'):
+            current_project = window.current_tab
+            if current_project and current_project.current_file:
+                from .graph_io import GraphSerializer
+
+                # Capturar estado visual atual
+                hadj = current_project.scrolled_window.get_hadjustment()
+                vadj = current_project.scrolled_window.get_vadjustment()
+
+                view_state = {
+                    "zoom": self.zoom_level,
+                    "scroll_x": hadj.get_value() if hadj else 0,
+                    "scroll_y": vadj.get_value() if vadj else 0
+                }
+
+                # Obter metadados do projeto
+                project_metadata = getattr(current_project, 'project_metadata', None)
+
+                # Salvar
+                success = GraphSerializer.save_graph(
+                    self.nodes,
+                    self.connections,
+                    current_project.current_file,
+                    view_state,
+                    project_metadata
+                )
+
+                if success:
+                    print(f"   💾 Auto-saved to: {current_project.current_file}")
+                else:
+                    print(f"   ⚠️  Auto-save failed")
 
     def rename_node(self):
         """Abre dialog para renomear nó"""

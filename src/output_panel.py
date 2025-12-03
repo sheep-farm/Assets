@@ -13,8 +13,11 @@ import sys
 class OutputPanel(Gtk.Box):
     """Painel principal de outputs com tabs"""
 
-    def __init__(self):
+    def __init__(self, canvas=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
+
+        # Armazenar referência ao canvas para dar foco quando esconder
+        self.canvas = canvas
 
         # Header com controles
         self.header = self._create_header()
@@ -59,6 +62,7 @@ class OutputPanel(Gtk.Box):
         # Botão de Show/Hide com o título
         self.toggle_btn = Gtk.Button()
         self.toggle_btn.set_has_frame(False)
+        self.toggle_btn.set_can_focus(False)  # Não recebe foco
         title_label = Gtk.Label()
         title_label.set_markup("<b>📊 Output Panel</b>")
         title_label.set_xalign(0)
@@ -106,6 +110,9 @@ class OutputPanel(Gtk.Box):
             self.separator.set_visible(False)
             # Mover divisor para o final (minimizar output panel)
             parent.set_position(parent.get_allocated_height() - 40)
+            # Dar foco ao canvas
+            if self.canvas:
+                self.canvas.grab_focus()
 
     def clear_all(self):
         """Limpa todos os outputs (chamado ao clicar em Run)"""

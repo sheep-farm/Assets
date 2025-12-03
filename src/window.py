@@ -73,6 +73,8 @@ class AssetsWindow(Adw.ApplicationWindow):
 
         # Conectar signals dos botões principais
         self.run_button.connect("clicked", self._on_run_graph)
+        self.run_button.set_can_focus(False)  # Botões não recebem foco
+        self.sidebar_toggle.set_can_focus(False)
         # self.result_toggle.connect("toggled", self._on_result_toggle)
 
         # Criar botão de dependências programaticamente

@@ -42,8 +42,8 @@ class ProjectTab:
         self.scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         self.scrolled_window.set_child(self.canvas)
 
-        # Criar output panel
-        self.output_panel = OutputPanel()
+        # Criar output panel (passar canvas para ele ter acesso ao foco)
+        self.output_panel = OutputPanel(self.canvas)
         self.output_panel.set_vexpand(True)
         self.output_panel.set_hexpand(True)
 
