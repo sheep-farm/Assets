@@ -214,6 +214,47 @@ class PreferencesDialog(Adw.PreferencesWindow):
 
         page.add(selection_group)
 
+        # Grupo: Focus Mode
+        focus_group = Adw.PreferencesGroup()
+        focus_group.set_title("Focus Mode")
+        focus_group.set_description("Configure node focus and highlighting behavior")
+
+        # Número de níveis de conexão
+        focus_depth_row = Adw.SpinRow()
+        focus_depth_row.set_title("Focus Depth")
+        focus_depth_row.set_subtitle("Connection levels to highlight (0=only node, 1=direct, 2+=indirect)")
+        depth_adjustment = Gtk.Adjustment(
+            value=self.settings.get_int("focus-depth"),
+            lower=0,
+            upper=10,
+            step_increment=1,
+            page_increment=1,
+            page_size=0
+        )
+        focus_depth_row.set_adjustment(depth_adjustment)
+        focus_depth_row.set_digits(0)
+        depth_adjustment.connect('value-changed', self._on_depth_changed, "focus-depth")
+        focus_group.add(focus_depth_row)
+
+        # Opacidade dos elementos desfocados
+        dimming_opacity_row = Adw.SpinRow()
+        dimming_opacity_row.set_title("Dimming Opacity")
+        dimming_opacity_row.set_subtitle("Opacity of dimmed nodes/connections when not in focus")
+        dimming_adjustment = Gtk.Adjustment(
+            value=self.settings.get_double("focus-dimming-opacity"),
+            lower=0.0,
+            upper=1.0,
+            step_increment=0.05,
+            page_increment=0.1,
+            page_size=0
+        )
+        dimming_opacity_row.set_adjustment(dimming_adjustment)
+        dimming_opacity_row.set_digits(2)
+        dimming_adjustment.connect('value-changed', self._on_opacity_changed, "focus-dimming-opacity")
+        focus_group.add(dimming_opacity_row)
+
+        page.add(focus_group)
+
         # Adicionar página à janela
         self.add(page)
 
@@ -284,3 +325,14 @@ class PreferencesDialog(Adw.PreferencesWindow):
         """
         value = adjustment.get_value()
         self.settings.set_double(setting_key, value)
+
+    def _on_depth_changed(self, adjustment, setting_key):
+        """
+        Callback quando o depth é alterado
+
+        Args:
+            adjustment: Gtk.Adjustment que disparou o evento
+            setting_key: Chave da configuração
+        """
+        value = int(adjustment.get_value())
+        self.settings.set_int(setting_key, value)

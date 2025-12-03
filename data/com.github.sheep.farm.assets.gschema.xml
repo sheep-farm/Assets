@@ -78,5 +78,18 @@
 			<summary>Selection Border Opacity</summary>
 			<description>Transparency of selection rectangle border (0.0-1.0)</description>
 		</key>
+
+		<!-- Focus Mode Settings -->
+		<key name="focus-depth" type="i">
+			<default>1</default>
+			<range min="0" max="10"/>
+			<summary>Focus Depth</summary>
+			<description>Number of connection levels to highlight when focusing a node (0=only node, 1=direct connections, 2+=indirect)</description>
+		</key>
+		<key name="focus-dimming-opacity" type="d">
+			<default>0.25</default>
+			<summary>Focus Dimming Opacity</summary>
+			<description>Opacity of dimmed nodes/connections when not in focus (0.0-1.0)</description>
+		</key>
 	</schema>
 </schemalist>

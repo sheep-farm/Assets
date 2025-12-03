@@ -72,6 +72,11 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.selection_current_x = 0
         self.selection_current_y = 0
 
+        # Estado de focus (destacar nó e conexões)
+        self.focus_node = None  # Nó em focus (None = sem focus)
+        self.focus_nodes_set = set()  # Set de nós destacados (nó focado + N níveis)
+        self.focus_connections_set = set()  # Set de conexões destacadas
+
         # Configurar eventos de mouse
         self._setup_mouse_events()
 
@@ -110,6 +115,110 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Callback quando uma configuração muda"""
         # Redesenhar canvas quando cores mudarem
         self.queue_draw()
+
+        # Se mudou o focus-depth, recalcular focus
+        if key == "focus-depth" and self.focus_node:
+            self._calculate_focus_nodes()
+
+    def _calculate_focus_nodes(self):
+        """
+        Calcula quais nós e conexões devem ser destacados baseado no nó em focus
+        e no nível de profundidade configurado.
+
+        Apenas inclui as conexões que fazem parte do CAMINHO entre o nó focado
+        e os nós conectados, não todas as conexões dos nós intermediários.
+        """
+        if not self.focus_node:
+            self.focus_nodes_set = set()
+            self.focus_connections_set = set()
+            return
+
+        # Obter profundidade das configurações
+        depth = 1
+        if self.settings:
+            try:
+                depth = self.settings.get_int("focus-depth")
+            except:
+                depth = 1
+
+        # Inicializar sets
+        self.focus_nodes_set = {self.focus_node}
+        self.focus_connections_set = set()
+
+        if depth == 0:
+            # Apenas o nó focado
+            return
+
+        # BFS: apenas adicionar conexões que fazem parte do caminho explorado
+        from collections import deque
+        queue = deque([(self.focus_node, 0)])
+        visited = {self.focus_node}
+
+        while queue:
+            current_node, current_level = queue.popleft()
+
+            if current_level >= depth:
+                continue
+
+            # Explorar conexões (upstream e downstream)
+            for conn in self.connections:
+                source_node, source_port, target_node, target_port = conn
+
+                # Downstream: current_node fornece dados para target_node
+                if source_node == current_node and target_node not in visited:
+                    # Adicionar esta conexão ao caminho
+                    self.focus_connections_set.add(conn)
+                    visited.add(target_node)
+                    self.focus_nodes_set.add(target_node)
+                    queue.append((target_node, current_level + 1))
+
+                # Upstream: source_node fornece dados para current_node
+                elif target_node == current_node and source_node not in visited:
+                    # Adicionar esta conexão ao caminho
+                    self.focus_connections_set.add(conn)
+                    visited.add(source_node)
+                    self.focus_nodes_set.add(source_node)
+                    queue.append((source_node, current_level + 1))
+
+    def toggle_focus_node(self, node):
+        """
+        Ativa/desativa o modo focus em um nó
+
+        Args:
+            node: Nó para focar (ou None para limpar)
+        """
+        if self.focus_node == node:
+            # Toggle off
+            self.focus_node = None
+            self.focus_nodes_set = set()
+            self.focus_connections_set = set()
+        else:
+            # Focus on
+            self.focus_node = node
+            self._calculate_focus_nodes()
+
+        self.queue_draw()
+
+    def set_focus_node(self, node):
+        """
+        Define o nó em focus (sem toggle, apenas set)
+
+        Args:
+            node: Nó para focar (ou None para limpar)
+        """
+        if node is None:
+            self.focus_node = None
+            self.focus_nodes_set = set()
+            self.focus_connections_set = set()
+        else:
+            self.focus_node = node
+            self._calculate_focus_nodes()
+
+        self.queue_draw()
+
+    def clear_focus_node(self):
+        """Limpa o foco atual"""
+        self.set_focus_node(None)
 
     def _get_color_setting(self, key):
         """
@@ -313,10 +422,11 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Converter para coordenadas do canvas
         canvas_x, canvas_y = self._screen_to_canvas(x, y)
 
-        # Pegar estado dos modificadores (Ctrl, Shift)
+        # Pegar estado dos modificadores (Ctrl, Shift, Alt)
         modifiers = gesture.get_current_event_state()
         ctrl_pressed = modifiers & Gdk.ModifierType.CONTROL_MASK
         shift_pressed = modifiers & Gdk.ModifierType.SHIFT_MASK
+        alt_pressed = modifiers & Gdk.ModifierType.ALT_MASK
 
         # Botão direito: menu de contexto
         if button == 3:  # Botão direito
@@ -350,16 +460,8 @@ class AssetsCanvas(Gtk.DrawingArea):
                 self.queue_draw()
                 return
 
-        # Terceiro, verificar se clicou em uma CONEXÃO (linha)
-        clicked_connection = self._get_connection_at_point(canvas_x, canvas_y)
-        if clicked_connection:
-            self.selected_connection = clicked_connection
-            self.queue_draw()
-            return
-        else:
-            self.selected_connection = None
-
-        # Quarto, verificar se clicou em algum nó (corpo do nó, não porta)
+        # Terceiro, verificar se clicou em algum nó (corpo do nó, não porta)
+        # NÓS TÊM PRIORIDADE SOBRE CONEXÕES!
         clicked_node = None
         for node in reversed(self.nodes):
             if node.contains_point(canvas_x, canvas_y):
@@ -368,8 +470,23 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         if clicked_node:
             # Clicou em um nó
+            # Desselecionar conexão se havia uma selecionada
+            self.selected_connection = None
 
-            if ctrl_pressed:
+            # DUPLO CLIQUE: Abrir editor de código
+            if n_press == 2:
+                window = self.get_root()
+                dialog = CodeEditorDialog(window, clicked_node)
+                dialog.on_apply_callback = lambda code: self._on_code_editor_apply(clicked_node, code)
+                dialog.present()
+                return
+
+            if ctrl_pressed and alt_pressed:
+                # Ctrl+Alt+Click: toggle focus mode
+                self.toggle_focus_node(clicked_node)
+                return
+
+            elif ctrl_pressed:
                 # Ctrl+Click: toggle seleção (seleção múltipla)
                 clicked_node.set_selected(not clicked_node.selected)
                 if clicked_node.selected:
@@ -377,6 +494,11 @@ class AssetsCanvas(Gtk.DrawingArea):
                     self.focused_node_index = self.nodes.index(clicked_node)
             else:
                 # Click normal: selecionar este nó (permite arrastar imediatamente)
+
+                # Se está em focus mode, sair dele ao clicar em qualquer nó
+                if self.focus_node is not None:
+                    self.clear_focus_node()
+
                 # Se não está selecionado, desselecionar outros
                 if not clicked_node.selected:
                     for node in self.nodes:
@@ -386,6 +508,15 @@ class AssetsCanvas(Gtk.DrawingArea):
                 self.bring_to_front(clicked_node)
                 self.focused_node_index = self.nodes.index(clicked_node)
         else:
+            # Não clicou em um nó - verificar se clicou em uma CONEXÃO (linha)
+            clicked_connection = self._get_connection_at_point(canvas_x, canvas_y)
+            if clicked_connection:
+                self.selected_connection = clicked_connection
+                self.queue_draw()
+                return
+            else:
+                self.selected_connection = None
+
             # Clicou no vazio
             if not ctrl_pressed:
                 # Se não está com Ctrl, iniciar seleção de região
@@ -694,6 +825,19 @@ class AssetsCanvas(Gtk.DrawingArea):
                 self.show_node_properties()
                 return True
 
+        # F - Toggle focus mode no nó focado
+        if keyval == Gdk.KEY_f and not ctrl_pressed:
+            if 0 <= self.focused_node_index < len(self.nodes):
+                node = self.nodes[self.focused_node_index]
+                self.toggle_focus_node(node)
+                return True
+
+        # Escape - Limpar focus mode
+        if keyval == Gdk.KEY_Escape:
+            if self.focus_node:
+                self.toggle_focus_node(None)
+                return True
+
         # TAB - Próximo nó
         if keyval == Gdk.KEY_Tab and not (state & Gdk.ModifierType.SHIFT_MASK):
             self._focus_next_node()
@@ -781,6 +925,11 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Selecionar novo
         self.nodes[self.focused_node_index].set_selected(True)
+
+        # Atualizar focus se em focus mode
+        if self.focus_node is not None:
+            self.set_focus_node(self.nodes[self.focused_node_index])
+
         # print(f"Foco → {self.nodes[self.focused_node_index].title}")
         self.queue_draw()
 
@@ -798,6 +947,11 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Selecionar novo
         self.nodes[self.focused_node_index].set_selected(True)
+
+        # Atualizar focus se em focus mode
+        if self.focus_node is not None:
+            self.set_focus_node(self.nodes[self.focused_node_index])
+
         # print(f"Foco ← {self.nodes[self.focused_node_index].title}")
         self.queue_draw()
 
@@ -895,26 +1049,41 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Copia os nós selecionados para o clipboard global (Ctrl+C)"""
         window = self.get_root()
         if not window:
+            print("⚠️  Sem window!")
             return
 
         # Pegar todos os nós selecionados
         selected_nodes = [node for node in self.nodes if node.selected]
 
         if not selected_nodes:
-            #print("⚠️  Nenhum nó selecionado para copiar")
+            print("⚠️  Nenhum nó selecionado para copiar")
             return
 
         # Copiar nós
         window.clipboard_nodes = selected_nodes
 
-        # Copiar conexões entre nós selecionados
+        print(f"🔍 Debug - Total de conexões no canvas: {len(self.connections)}")
+        print(f"🔍 Debug - Nós selecionados: {[node.title for node in selected_nodes]}")
+
+        # Copiar conexões relacionadas aos nós selecionados
+        # Incluir: conexões entre nós selecionados E conexões que chegam nos nós selecionados
         window.clipboard_connections = []
         for conn in self.connections:
             source_node, source_port, target_node, target_port = conn
-            if source_node in selected_nodes and target_node in selected_nodes:
-                window.clipboard_connections.append(conn)
+            print(f"🔍 Verificando conexão: {source_node.title}[{source_port}] -> {target_node.title}[{target_port}]")
+            print(f"   source in selected: {source_node in selected_nodes}, target in selected: {target_node in selected_nodes}")
 
-        #print(f"📋 Copiado: {len(selected_nodes)} nó(s) e {len(window.clipboard_connections)} conexão(ões)")
+            # Copiar se:
+            # 1. Ambos os nós estão selecionados (conexão interna)
+            # 2. Apenas o target está selecionado (conexão de entrada)
+            if target_node in selected_nodes:
+                window.clipboard_connections.append(conn)
+                if source_node in selected_nodes:
+                    print(f"   ✅ Conexão interna copiada!")
+                else:
+                    print(f"   ✅ Conexão de entrada copiada (origem não selecionada)!")
+
+        print(f"📋 Copiado: {len(selected_nodes)} nó(s) e {len(window.clipboard_connections)} conexão(ões)")
 
     def _are_types_compatible(self, source_type, target_type):
         """
@@ -1031,10 +1200,12 @@ class AssetsCanvas(Gtk.DrawingArea):
             node_map[clipboard_node] = new_node
 
         # Recriar conexões entre os nós colados
+        connections_recreated = 0
+        connections_to_existing = 0
         for conn in window.clipboard_connections:
             source_node, source_port, target_node, target_port = conn
 
-            # Verificar se ambos os nós estão no mapa
+            # Caso 1: Ambos os nós foram colados (conexão interna)
             if source_node in node_map and target_node in node_map:
                 new_source = node_map[source_node]
                 new_target = node_map[target_node]
@@ -1042,6 +1213,33 @@ class AssetsCanvas(Gtk.DrawingArea):
                 # Criar nova conexão
                 new_conn = (new_source, source_port, new_target, target_port)
                 self.connections.append(new_conn)
+                connections_recreated += 1
+                print(f"   ✅ Conexão interna recriada: {new_source.title} -> {new_target.title}")
+
+            # Caso 2: Apenas o target foi colado, source existe no canvas original (conexão de entrada)
+            elif source_node not in node_map and target_node in node_map:
+                # Procurar o nó de origem no canvas atual pelo ID
+                existing_source = None
+                for node in self.nodes:
+                    if node.id == source_node.id:
+                        existing_source = node
+                        break
+
+                if existing_source:
+                    new_target = node_map[target_node]
+                    # Criar conexão do nó existente para o nó colado
+                    new_conn = (existing_source, source_port, new_target, target_port)
+                    self.connections.append(new_conn)
+                    connections_to_existing += 1
+                    print(f"   ✅ Conexão para nó existente recriada: {existing_source.title} -> {new_target.title}")
+                else:
+                    print(f"   ⚠️  Nó de origem '{source_node.title}' não encontrado no canvas")
+
+            else:
+                print(f"⚠️  Conexão não recriada: source={source_node in node_map}, target={target_node in node_map}")
+
+        total_connections = connections_recreated + connections_to_existing
+        print(f"📌 Colado: {len(new_nodes)} nó(s), {connections_recreated} conexão(ões) internas, {connections_to_existing} para nós existentes ({total_connections} total)")
 
         # Desselecionar todos
         for node in self.nodes:
@@ -1054,7 +1252,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Atualizar foco para o último nó colado
         if new_nodes:
             self.focused_node_index = self.nodes.index(new_nodes[-1])
-            #print(f"📌 Colado: {len(new_nodes)} nó(s) e {len(window.clipboard_connections)} conexão(ões)")
 
         self.queue_draw()
 
@@ -1994,9 +2191,28 @@ print("__OUTPUT__:" + output_b64)
             'node_running': self._get_color_setting("node-running-color"),
         }
 
+        # Obter opacidade de dimming se em modo focus
+        dimming_opacity = 1.0
+        if self.focus_node:
+            dimming_opacity = self._get_opacity_setting("focus-dimming-opacity")
+
         # Desenhar todos os nós
         for node in self.nodes:
+            # Verificar se o nó deve ser dimmed
+            should_dim = self.focus_node is not None and node not in self.focus_nodes_set
+
+            if should_dim:
+                # Salvar estado e aplicar transparência
+                context.save()
+                context.push_group()
+
             node.draw(context, theme_colors)
+
+            if should_dim:
+                # Aplicar dimming
+                context.pop_group_to_source()
+                context.paint_with_alpha(dimming_opacity)
+                context.restore()
 
         # Desenhar conexões selecionadas por cima
         self._draw_connections(context, selected_only=True)
@@ -2060,16 +2276,26 @@ print("__OUTPUT__:" + output_b64)
 
             # Desenhar se ambas as portas existem
             if start and end:
+                # Verificar se deve aplicar dimming
+                should_dim = self.focus_node is not None and connection not in self.focus_connections_set
+
                 # Cor e largura diferentes se está selecionada
                 if is_selected:
                     context.set_line_width(4 / self.zoom_level)
                     selected_color = self._get_color_setting("connection-selected-color")
-                    context.set_source_rgba(*selected_color, 0.95)
+                    alpha = 0.95
                 else:
                     context.set_line_width(3 / self.zoom_level)
                     normal_color = self._get_color_setting("connection-normal-color")
-                    context.set_source_rgba(*normal_color, 0.75)
+                    selected_color = normal_color  # Usar mesma variável
+                    alpha = 0.75
 
+                # Aplicar dimming se necessário
+                if should_dim:
+                    dimming_opacity = self._get_opacity_setting("focus-dimming-opacity")
+                    alpha *= dimming_opacity
+
+                context.set_source_rgba(*selected_color, alpha)
                 self._draw_connection(context, start, end)
 
         # Se está criando uma conexão, desenhar linha temporária (sempre por cima)
