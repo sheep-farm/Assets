@@ -318,7 +318,6 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
 
         # Criar páginas
         self._create_general_page()
-        self._create_code_page()
         self._create_ports_page()
         self._create_info_page()
 
@@ -365,78 +364,6 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
         outputs_row.set_value(self.node.num_outputs)
         self.outputs_spin = outputs_row
         group.add(outputs_row)
-
-        page.add(group)
-        self.add(page)
-    
-    def _create_code_page(self):
-        """Cria página de edição de código"""
-        page = Adw.PreferencesPage()
-        page.set_title("Code")
-        page.set_icon_name("text-x-python-symbolic")
-
-        group = Adw.PreferencesGroup()
-
-        # Se for nó referenciado, mostrar mensagem diferente
-        if self.node.code_ref is not None:
-            group.set_title("Referenced Code (Read-Only)")
-            group.set_description("This node references code from another node. Edit the original node to change the code.")
-        else:
-            group.set_title("Python Code")
-            group.set_description("Return values as tuple: return (output1, output2, ...)")
-
-        # Editor em um box
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_hexpand(True)
-        scrolled.set_min_content_height(300)
-
-        self.code_view = GtkSource.View()
-        self.code_buffer = self.code_view.get_buffer()
-
-        # Configurações do editor
-        self.code_view.set_show_line_numbers(True)
-        self.code_view.set_highlight_current_line(True)
-        self.code_view.set_auto_indent(True)
-        self.code_view.set_indent_on_tab(True)
-        self.code_view.set_tab_width(4)
-        self.code_view.set_insert_spaces_instead_of_tabs(True)
-        self.code_view.set_monospace(True)
-        self.code_view.set_wrap_mode(Gtk.WrapMode.WORD)
-        self.code_view.set_top_margin(12)
-        self.code_view.set_bottom_margin(12)
-        self.code_view.set_left_margin(12)
-        self.code_view.set_right_margin(12)
-
-        # Configurar linguagem Python
-        lang_manager = GtkSource.LanguageManager.get_default()
-        python_lang = lang_manager.get_language('python3')
-        self.code_buffer.set_language(python_lang)
-
-        # Configurar style scheme
-        style_manager = GtkSource.StyleSchemeManager.get_default()
-        scheme = style_manager.get_scheme('Adwaita-dark')
-        if scheme is None:
-            scheme = style_manager.get_scheme('classic')
-        if scheme:
-            self.code_buffer.set_style_scheme(scheme)
-
-        self.code_buffer.set_text(self.node.code)
-
-        # Se for nó referenciado, desabilitar edição
-        if self.node.code_ref is not None:
-            self.code_view.set_editable(False)
-            self.code_view.set_cursor_visible(False)
-
-        scrolled.set_child(self.code_view)
-        box.append(scrolled)
-
-        # Adicionar box como child do grupo usando ActionRow
-        row = Adw.ActionRow()
-        row.set_child(box)
-        group.add(row)
 
         page.add(group)
         self.add(page)
@@ -642,10 +569,8 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
     
     def get_properties(self):
         """Retorna dicionário com as propriedades editadas"""
-        # Pegar código
-        start = self.code_buffer.get_start_iter()
-        end = self.code_buffer.get_end_iter()
-        code = self.code_buffer.get_text(start, end, False)
+        # Código não é mais editado aqui (tem dialog próprio)
+        code = self.node.code  # Manter código atual do nó
 
         # Pegar cor customizada
         rgba = self.color_button.get_rgba()

@@ -227,6 +227,7 @@ class ClipboardManager:
             use_offset = False
 
         new_nodes = []
+        node_map = {}  # Mapear nós antigos -> novos para recriar conexões
 
         # Calcular centro do grupo de nós copiados (para posicionar relativo ao mouse)
         if not use_offset:
@@ -276,6 +277,43 @@ class ClipboardManager:
             self.canvas.nodes.append(new_node)
             new_nodes.append(new_node)
 
+            # Mapear nó antigo -> novo para recriar conexões
+            node_map[clipboard_node] = new_node
+
+        # Recriar conexões entre os nós colados (igual ao paste_nodes)
+        connections_recreated = 0
+        connections_to_existing = 0
+        for conn in window.clipboard_connections:
+            source_node, source_port, target_node, target_port = conn
+
+            # Caso 1: Ambos os nós foram colados (conexão interna)
+            if source_node in node_map and target_node in node_map:
+                new_source = node_map[source_node]
+                new_target = node_map[target_node]
+
+                # Criar nova conexão
+                new_conn = (new_source, source_port, new_target, target_port)
+                self.canvas.connections.append(new_conn)
+                connections_recreated += 1
+
+            # Caso 2: Apenas o target foi colado, source existe no canvas original (conexão de entrada)
+            elif source_node not in node_map and target_node in node_map:
+                # Procurar o nó de origem no canvas atual pelo ID
+                existing_source = None
+                for node in self.canvas.nodes:
+                    if node.id == source_node.id:
+                        existing_source = node
+                        break
+
+                if existing_source:
+                    new_target = node_map[target_node]
+                    # Criar conexão do nó existente para o nó colado
+                    new_conn = (existing_source, source_port, new_target, target_port)
+                    self.canvas.connections.append(new_conn)
+                    connections_to_existing += 1
+
+        total_connections = connections_recreated + connections_to_existing
+
         # Desselecionar todos
         for node in self.canvas.nodes:
             node.selected = False
@@ -288,7 +326,7 @@ class ClipboardManager:
         if new_nodes:
             self.canvas.focused_node_index = self.canvas.nodes.index(new_nodes[-1])
 
-        print(f"📋 Colado como referência: {len(new_nodes)} nó(s)")
+        print(f"📋 Colado como referência: {len(new_nodes)} nó(s), {total_connections} conexão(ões)")
         self.canvas.queue_draw()
 
     def duplicate_selected_nodes(self):
