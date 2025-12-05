@@ -14,13 +14,17 @@ from .node_library import _get_library
 from .output_panel import OutputPanel
 from .undo_redo import UndoRedoManager
 from .data_helpers import create_data_helpers, process_folder_output
+from .graph_executor import GraphExecutor
+from .canvas_drawing import CanvasDrawing
+from .clipboard_manager import ClipboardManager
 
 class AssetsCanvas(Gtk.DrawingArea):
     """Canvas que desenha os nós"""
 
     def __init__(self):
         super().__init__()
-        self.set_draw_func(self.on_draw)
+        # Nota: drawing helper será inicializado depois, então criamos wrapper
+        self.set_draw_func(lambda area, ctx, w, h: self.on_draw(area, ctx, w, h))
 
         # Inicializar GSettings para cores
         try:
@@ -90,6 +94,11 @@ class AssetsCanvas(Gtk.DrawingArea):
         # Inicializar sistema de Undo/Redo
         self.undo_manager = UndoRedoManager(self)
         self._recording_undo = True  # Flag para controlar gravação
+
+        # Inicializar helpers refatorados
+        self.executor = GraphExecutor(self)
+        self.drawing = CanvasDrawing(self)
+        self.clipboard = ClipboardManager(self)
 
         # Posição do menu de contexto (para paste na posição do mouse)
         self.context_menu_position = None
@@ -780,17 +789,22 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Ctrl+C - Copiar nós selecionados
         if ctrl_pressed and keyval == Gdk.KEY_c:
-            self._copy_focused_node()
+            self.clipboard.copy_selected_nodes()
             return True
 
         # Ctrl+V - Colar nós do clipboard
         if ctrl_pressed and keyval == Gdk.KEY_v:
-            self._paste_node()
+            self.clipboard.paste_nodes()
+            return True
+
+        # Ctrl+R - Colar nós como referência (sem conexões)
+        if ctrl_pressed and keyval == Gdk.KEY_r:
+            self.clipboard.paste_nodes_as_reference()
             return True
 
         # Ctrl+D - Duplicar nós selecionados
         if ctrl_pressed and keyval == Gdk.KEY_d:
-            self._duplicate_focused_node()
+            self.clipboard.duplicate_selected_nodes()
             return True
 
         # Ctrl+Z - Undo
@@ -847,7 +861,7 @@ class AssetsCanvas(Gtk.DrawingArea):
                     return True
 
                 def run_in_background():
-                    success = self.execute_graph()
+                    success = self.executor.execute_graph()
                     def finish():
                         if success:
                             print("=" * 60)
@@ -1077,46 +1091,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.queue_draw()
         #print(f"✓ Selecionados {len(self.nodes)} nó(s)")
 
-    def _copy_focused_node(self):
-        """Copia os nós selecionados para o clipboard global (Ctrl+C)"""
-        window = self.get_root()
-        if not window:
-            print("⚠️  Sem window!")
-            return
-
-        # Pegar todos os nós selecionados
-        selected_nodes = [node for node in self.nodes if node.selected]
-
-        if not selected_nodes:
-            print("⚠️  Nenhum nó selecionado para copiar")
-            return
-
-        # Copiar nós
-        window.clipboard_nodes = selected_nodes
-
-        print(f"🔍 Debug - Total de conexões no canvas: {len(self.connections)}")
-        print(f"🔍 Debug - Nós selecionados: {[node.title for node in selected_nodes]}")
-
-        # Copiar conexões relacionadas aos nós selecionados
-        # Incluir: conexões entre nós selecionados E conexões que chegam nos nós selecionados
-        window.clipboard_connections = []
-        for conn in self.connections:
-            source_node, source_port, target_node, target_port = conn
-            print(f"🔍 Verificando conexão: {source_node.title}[{source_port}] -> {target_node.title}[{target_port}]")
-            print(f"   source in selected: {source_node in selected_nodes}, target in selected: {target_node in selected_nodes}")
-
-            # Copiar se:
-            # 1. Ambos os nós estão selecionados (conexão interna)
-            # 2. Apenas o target está selecionado (conexão de entrada)
-            if target_node in selected_nodes:
-                window.clipboard_connections.append(conn)
-                if source_node in selected_nodes:
-                    print(f"   ✅ Conexão interna copiada!")
-                else:
-                    print(f"   ✅ Conexão de entrada copiada (origem não selecionada)!")
-
-        print(f"📋 Copiado: {len(selected_nodes)} nó(s) e {len(window.clipboard_connections)} conexão(ões)")
-
     def _are_types_compatible(self, source_type, target_type):
         """
         Verifica se dois tipos de portas são compatíveis para conexão.
@@ -1327,618 +1301,6 @@ class AssetsCanvas(Gtk.DrawingArea):
         self.context_menu_node = None
         self._update_canvas_size()
         self.queue_draw()
-
-    def execute_graph(self):
-        """
-        Executa o grafo completo em ordem topológica com paralelização por níveis.
-
-        Returns:
-            bool: True se execução foi bem sucedida, False caso contrário
-        """
-        if not self.nodes:
-            print("⚠️  Nenhum nó para executar")
-            return False
-
-        # Limpar output_values e estado de erro de TODOS os nós antes de executar
-        # Isso garante execução limpa sem resultados antigos
-        from .node import NodeExecutionState
-        for node in self.nodes:
-            node.output_values = {}
-            node.has_error = False
-            node.error_message = ""
-            node.execution_state = NodeExecutionState.IDLE
-
-        # 1. Verificar se grafo tem ciclos
-        execution_order = self._topological_sort()
-        if execution_order is None:
-            print("❌ Erro: Grafo contém ciclos! Não é possível executar.")
-            return False
-
-        # 2. Agrupar nós por nível de execução
-        levels = self._group_by_execution_level()
-
-        print(f"📋 Níveis de execução: {len(levels)}")
-        for i, level in enumerate(levels):
-            print(f"  Nível {i}: {[node.title for node in level]}")
-        print()
-
-        # 3. Dicionário para armazenar resultados de cada nó (thread-safe)
-        import threading
-        node_results = {}
-        results_lock = threading.Lock()
-
-        # Obter referência à janela para acessar output_panel
-        window = self.get_root()
-
-        # Obter output_panel do projeto atual (mais confiável)
-        output_panel = None
-        if hasattr(self, 'project_tab') and self.project_tab:
-            output_panel = self.project_tab.output_panel
-            print(f"✓ Usando output_panel do project_tab")
-        elif hasattr(window, 'output_panel'):
-            output_panel = window.output_panel
-            print(f"✓ Usando output_panel da window")
-        else:
-            print(f"⚠️  Nenhum output_panel encontrado!")
-
-        # Limpar outputs anteriores antes de executar
-        from gi.repository import GLib
-        if output_panel:
-            print(f"🧹 Limpando output panel...")
-            GLib.idle_add(output_panel.clear_all)
-
-        try:
-            # 4. Executar cada nível em paralelo
-            for level_idx, level in enumerate(levels):
-                print(f"⚡ Executando nível {level_idx} ({len(level)} nós em paralelo)...")
-
-                # Função para executar um nó
-                def execute_node_wrapper(node):
-                    try:
-                        # Marcar nó como RUNNING
-                        node.execution_state = NodeExecutionState.RUNNING
-                        from gi.repository import GLib
-                        GLib.idle_add(self.queue_draw)
-
-                        # Coletar inputs deste nó
-                        with results_lock:
-                            inputs = self._collect_node_inputs(node, node_results)
-
-                        # Executar código do nó
-                        outputs = self._execute_node_code(node, inputs)
-
-                        # Marcar nó como COMPLETED
-                        node.execution_state = NodeExecutionState.COMPLETED
-                        GLib.idle_add(self.queue_draw)
-
-                        # Armazenar resultados (thread-safe)
-                        with results_lock:
-                            node_results[node] = outputs
-
-                        # RETORNAR outputs para processar na main thread
-                        return (node, outputs, None)  # (node, outputs, error)
-
-                    except Exception as e:
-                        import traceback
-                        # Marcar nó como ERROR
-                        node.execution_state = NodeExecutionState.ERROR
-                        GLib.idle_add(self.queue_draw)
-                        error_msg = f"❌ Erro ao executar {node.title}: {e}\n{traceback.format_exc()}"
-                        return (node, None, error_msg)
-
-                # Executar nós do nível em paralelo
-                level_results = []
-                with ThreadPoolExecutor(max_workers=len(level)) as executor:
-                    futures = [executor.submit(execute_node_wrapper, node) for node in level]
-
-                    # Aguardar conclusão de todos os nós do nível
-                    for future in as_completed(futures):
-                        node, outputs, error = future.result()
-
-                        if error:
-                            print(error)
-                            return False
-
-                        # Guardar para processar depois
-                        level_results.append((node, outputs))
-
-                # PROCESSAR outputs especiais na MAIN THREAD (fora do executor)
-                if output_panel:
-                    for node, outputs in level_results:
-                        # Pular nós que falharam (outputs = None)
-                        if outputs is None:
-                            continue
-                        for output in outputs:
-                            self._process_special_output(output, node, output_panel)
-
-            return True
-
-        except Exception as e:
-            print(f"❌ Erro na execução: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-
-    def _process_special_output(self, output, node, output_panel):
-        """
-        Processa outputs especiais e envia para o painel apropriado.
-        Usa GLib.idle_add para garantir que está na main thread.
-
-        Args:
-            output: Output do nó
-            node: Nó que gerou o output
-            output_panel: Painel de output
-        """
-        from gi.repository import GLib
-
-        # Se output é dict com chaves especiais, processar
-        if isinstance(output, dict):
-            # Console output (compartilhado, sem abas)
-            if "_console" in output:
-                console_text = str(output["_console"]) + "\n"
-                print(f"  → Processando console output de '{node.title}': {console_text.strip()}")
-                GLib.idle_add(output_panel.add_console, console_text)
-                return
-
-            # Plot matplotlib
-            if "_plot" in output:
-                print(f"  → Processando plot output de '{node.title}'")
-                GLib.idle_add(output_panel.add_plot, output["_plot"], f"Plot from: {node.title}")
-                return
-
-            # Tabela (DataFrame)
-            if "_table" in output:
-                print(f"  → Processando table output de '{node.title}'")
-                GLib.idle_add(output_panel.add_table, output["_table"], f"Table from: {node.title}")
-                return
-
-            # Dados estruturados
-            if "_data" in output:
-                print(f"  → Processando data output de '{node.title}'")
-                GLib.idle_add(output_panel.add_data, output["_data"], f"Data from: {node.title}")
-                return
-
-        # Output normal - não fazer nada (só passa para próximo nó)
-
-    def _topological_sort(self):
-        """
-        Ordena os nós em ordem topológica (dependências primeiro).
-
-        Returns:
-            list: Lista de nós em ordem de execução, ou None se houver ciclos
-        """
-        # Construir grafo de dependências
-        in_degree = {node: 0 for node in self.nodes}
-        adjacency = {node: [] for node in self.nodes}
-
-        for source_node, out_port, target_node, in_port in self.connections:
-            adjacency[source_node].append(target_node)
-            in_degree[target_node] += 1
-
-        # Algoritmo de Kahn para ordenação topológica
-        queue = [node for node in self.nodes if in_degree[node] == 0]
-        result = []
-
-        while queue:
-            node = queue.pop(0)
-            result.append(node)
-
-            for neighbor in adjacency[node]:
-                in_degree[neighbor] -= 1
-                if in_degree[neighbor] == 0:
-                    queue.append(neighbor)
-
-        # Se não processou todos os nós, há ciclos
-        if len(result) != len(self.nodes):
-            return None
-
-        return result
-
-    def _node_has_connections(self, node):
-        """
-        Verifica se um nó possui pelo menos uma conexão (entrada ou saída).
-
-        Args:
-            node: Nó a verificar
-
-        Returns:
-            bool: True se o nó tem pelo menos uma conexão, False caso contrário
-        """
-        for source_node, out_port, target_node, in_port in self.connections:
-            if source_node == node or target_node == node:
-                return True
-        return False
-
-    def _group_by_execution_level(self):
-        """
-        Agrupa nós por nível de execução (profundidade no DAG).
-        Nós no mesmo nível podem ser executados em paralelo.
-
-        NOTA: Nós sem nenhuma conexão (entrada E saída) são excluídos.
-
-        Returns:
-            list[list[Node]]: Lista de níveis, cada nível contém lista de nós
-        """
-        # Filtrar nós sem conexões
-        active_nodes = [node for node in self.nodes if self._node_has_connections(node)]
-        inactive_nodes = [node for node in self.nodes if not self._node_has_connections(node)]
-
-        # Mostrar nós inativos
-        if inactive_nodes:
-            print(f"⏸️  Nós inativos (sem conexões): {[node.title for node in inactive_nodes]}")
-
-        # Se não há nós ativos, retornar lista vazia
-        if not active_nodes:
-            return []
-
-        # Calcular profundidade de cada nó (distância máxima da raiz)
-        depth = {node: 0 for node in active_nodes}
-
-        # Construir adjacências inversas (target -> sources)
-        predecessors = {node: [] for node in active_nodes}
-        for source_node, out_port, target_node, in_port in self.connections:
-            if target_node in active_nodes and source_node in active_nodes:
-                predecessors[target_node].append(source_node)
-
-        # Calcular profundidade de cada nó
-        changed = True
-        while changed:
-            changed = False
-            for node in active_nodes:
-                if predecessors[node]:
-                    max_pred_depth = max(depth[pred] for pred in predecessors[node])
-                    new_depth = max_pred_depth + 1
-                    if new_depth > depth[node]:
-                        depth[node] = new_depth
-                        changed = True
-
-        # Agrupar por profundidade
-        max_depth = max(depth.values()) if depth else 0
-        levels = [[] for _ in range(max_depth + 1)]
-
-        for node in active_nodes:
-            levels[depth[node]].append(node)
-
-        return levels
-
-    def _collect_node_inputs(self, node, node_results):
-        """
-        Coleta os inputs de um nó a partir dos resultados dos nós anteriores.
-
-        MELHORADO: Múltiplas conexões na mesma porta viram lista automaticamente.
-
-        Args:
-            node: Nó cujos inputs serão coletados
-            node_results: Dicionário com resultados dos nós já executados
-
-        Returns:
-            tuple: Tupla com os inputs do nó
-        """
-        # Inicializar lista de inputs (um por porta de entrada)
-        inputs = [None] * node.num_inputs
-
-        # Rastrear múltiplas conexões por porta
-        connections_per_port = [[] for _ in range(node.num_inputs)]
-
-        # Coletar TODAS as conexões para cada porta
-        for source_node, out_port, target_node, in_port in self.connections:
-            if target_node == node:
-                # Esta conexão fornece input para este nó
-                if source_node in node_results:
-                    source_outputs = node_results[source_node]
-                    if out_port < len(source_outputs):
-                        # Adicionar à lista de conexões desta porta
-                        connections_per_port[in_port].append(source_outputs[out_port])
-
-        # Processar cada porta de entrada
-        for port_idx in range(node.num_inputs):
-            connections = connections_per_port[port_idx]
-
-            if len(connections) == 0:
-                # Nenhuma conexão: manter None
-                inputs[port_idx] = None
-            elif len(connections) == 1:
-                # Uma conexão: valor direto
-                inputs[port_idx] = connections[0]
-            else:
-                # Múltiplas conexões: criar lista
-                inputs[port_idx] = connections
-                print(f"  📌 Porta in[{port_idx}] recebeu {len(connections)} conexões → lista")
-
-        return tuple(inputs)
-
-    def _get_project_directory(self):
-        """
-        Retorna o diretório home do usuário.
-
-        Como load_data() e save_data() agora aceitam paths absolutos,
-        project_dir serve apenas como fallback para paths relativos.
-
-        Use sempre paths absolutos: load_data("~/caminho/arquivo.csv")
-        """
-        return Path.home()
-
-    def _execute_via_system_venv(self, node, inputs, venv):
-        """
-        Executa código usando Python do sistema via subprocess
-
-        Args:
-            node: Nó a executar
-            inputs: Tupla de inputs
-            venv: Instância do SystemVenv
-
-        Returns:
-            tuple: Outputs ou None se erro
-        """
-        import pickle
-        import base64
-        import time
-
-        # Debug: verificar se venv foi passado corretamente
-        if venv is None:
-            print(f"❌ ERRO: venv é None para nó '{node.title}'")
-            print(f"   project_tab.isolated_env = {getattr(self.project_tab, 'isolated_env', 'N/A') if hasattr(self, 'project_tab') else 'no project_tab'}")
-            print(f"   project_tab.python_mode = {getattr(self.project_tab, 'python_mode', 'N/A') if hasattr(self, 'project_tab') else 'no project_tab'}")
-            raise RuntimeError("System venv not configured. Please reopen the project or check Project Settings.")
-
-        try:
-            start_time = time.perf_counter()
-
-            # Serializar inputs para passar ao subprocess
-            inputs_b64 = base64.b64encode(pickle.dumps(inputs)).decode('ascii')
-
-            # Obter project_dir para helpers
-            project_dir = None
-            if hasattr(self, 'project_tab') and self.project_tab.current_file:
-                from pathlib import Path
-                project_dir = Path(self.project_tab.current_file).parent
-
-            # Criar script que será executado no venv
-            # IMPORTANTE: Envolve código do nó em função para capturar return
-            script = f'''
-import pickle
-import base64
-import sys
-from pathlib import Path
-import pandas as pd
-import numpy as np
-import json
-
-# Deserializar inputs
-inputs = pickle.loads(base64.b64decode({repr(inputs_b64)}))
-
-# Helpers: load_data e save_data
-project_dir = Path({repr(str(project_dir))}) if {repr(str(project_dir))} != "None" else Path.home() / "Documents"
-
-def load_data(filename):
-    """Carrega arquivo do projeto (auto-detecta formato)"""
-    path = Path(filename).expanduser()
-    if not path.is_absolute():
-        path = project_dir / filename
-    if not path.exists():
-        raise FileNotFoundError(f"Arquivo não encontrado: {{path}}")
-    suffix = path.suffix.lower()
-    if suffix == '.csv':
-        return pd.read_csv(path)
-    elif suffix in ['.xls', '.xlsx']:
-        return pd.read_excel(path)
-    elif suffix == '.json':
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-            return pd.DataFrame(data)
-        return data
-    elif suffix == '.parquet':
-        return pd.read_parquet(path)
-    elif suffix in ['.txt', '.log']:
-        with open(path, 'r', encoding='utf-8') as f:
-            return f.read()
-    else:
-        raise ValueError(f"Formato não suportado: {{suffix}}")
-
-def save_data(data, filename, **kwargs):
-    """Salva dados no projeto (auto-detecta formato)"""
-    path = Path(filename).expanduser()
-    if not path.is_absolute():
-        path = project_dir / filename
-    path.parent.mkdir(parents=True, exist_ok=True)
-    suffix = path.suffix.lower()
-
-    if isinstance(data, pd.DataFrame):
-        if suffix == '.csv':
-            data.to_csv(path, index=kwargs.get('index', False))
-        elif suffix in ['.xls', '.xlsx']:
-            data.to_excel(path, index=kwargs.get('index', False))
-        elif suffix == '.parquet':
-            data.to_parquet(path)
-        elif suffix == '.json':
-            data.to_json(path, orient=kwargs.get('orient', 'records'), indent=2)
-        else:
-            raise ValueError(f"Formato não suportado para DataFrame: {{suffix}}")
-    elif hasattr(data, 'savefig'):
-        data.savefig(path, dpi=kwargs.get('dpi', 150), bbox_inches='tight')
-    elif isinstance(data, (dict, list)):
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, default=str)
-    elif isinstance(data, str):
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(data)
-    elif isinstance(data, np.ndarray):
-        if suffix == '.csv':
-            pd.DataFrame(data).to_csv(path, index=False, header=False)
-        elif suffix == '.npy':
-            np.save(path, data)
-        else:
-            raise ValueError(f"Formato não suportado para array: {{suffix}}")
-    else:
-        raise TypeError(f"Tipo de dado não suportado: {{type(data)}}")
-    return path
-
-# Aliases
-load = load_data
-save = save_data
-
-# Executar código do nó dentro de função para capturar return
-def _node_func():
-{chr(10).join("    " + line for line in node.code.splitlines())}
-
-result = _node_func()
-
-# Serializar outputs
-output_b64 = base64.b64encode(pickle.dumps(result)).decode('ascii')
-print("__OUTPUT__:" + output_b64)
-'''
-
-            # Executar via venv
-            success, stdout, stderr = venv.run_code(script, timeout=60)
-
-            execution_time = time.perf_counter() - start_time
-            node.last_execution_time = execution_time
-            node.total_executions += 1
-
-            if not success:
-                print(f"❌ ERRO ao executar via system venv:")
-                print(stderr)
-                raise RuntimeError(stderr)
-
-            # Extrair output serializado
-            for line in stdout.split('\n'):
-                if line.startswith('__OUTPUT__:'):
-                    output_b64 = line.split(':', 1)[1]
-                    result = pickle.loads(base64.b64decode(output_b64))
-
-                    # Garantir que é tupla
-                    if not isinstance(result, tuple):
-                        result = (result,)
-
-                    # Processar outputs com "_folder" para auto-save
-                    project_dir = None
-                    if hasattr(self, 'project_tab') and self.project_tab.current_file:
-                        from pathlib import Path
-                        project_dir = Path(self.project_tab.current_file).parent
-
-                    result = process_folder_output(result, node.title, project_dir)
-
-                    return result
-
-            # Se não encontrou output, erro
-            raise RuntimeError("Nenhum resultado retornado")
-
-        except Exception as e:
-            print(f"❌ ERRO em '{node.title}' (system venv):")
-            print(f"   {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
-    def _execute_node_code(self, node, inputs):
-        """
-        Executa o código Python de um nó com profiling e error handling.
-
-        Args:
-            node: Nó a ser executado
-            inputs: Tupla com inputs do nó
-
-        Returns:
-            tuple: Tupla com outputs do nó, ou None se erro
-        """
-        import time
-        import traceback
-
-        if not node.code or node.code.strip() == "":
-            print(f"  ⚠️  Nó sem código, retornando inputs como outputs")
-            return inputs
-
-        # Verificar se deve usar system venv
-        if hasattr(self, 'project_tab'):
-            project = self.project_tab
-            if hasattr(project, 'python_mode') and project.python_mode == 'system':
-                # Executar via subprocess no venv do sistema
-                print(f"🐍 Executando '{node.title}' via system venv")
-                return self._execute_via_system_venv(node, inputs, project.isolated_env)
-
-        try:
-            # Validar tipos de entrada ANTES de executar
-            is_valid, error_msg = node.validate_input_types(inputs)
-            if not is_valid:
-                raise TypeError(error_msg)
-
-            # Configurar matplotlib para backend non-interactive (evita warning de GUI)
-            try:
-                import matplotlib
-                matplotlib.use('Agg')  # Backend sem GUI
-            except:
-                pass
-
-            # Executar código com profiling
-            start_time = time.perf_counter()
-
-            # Transformar o código em uma função
-            code_as_function = "def __node_function(inputs):\n"
-            for line in node.code.split('\n'):
-                code_as_function += f"    {line}\n"
-
-            # Obter diretório do projeto
-            project_dir = self._get_project_directory()
-
-            # Criar helpers de dados configurados para este projeto
-            helpers = create_data_helpers(project_dir)
-
-            # Preparar namespace com builtins + helpers + bibliotecas úteis
-            namespace = {
-                '__builtins__': __builtins__,
-                # Data helpers
-                'load_data': helpers['load_data'],
-                'save_data': helpers['save_data'],
-                'load': helpers['load'],
-                'save': helpers['save'],
-                'project_dir': helpers['project_dir'],
-                # Diretórios úteis
-                'nodes_dir': Path.home() / ".nodes",
-                'home_dir': Path.home(),
-                # Bibliotecas comuns
-                'pd': __import__('pandas'),
-                'np': __import__('numpy'),
-                'plt': __import__('matplotlib.pyplot'),
-                'Path': Path,
-            }
-
-            exec(code_as_function, namespace)
-
-            # Chamar a função com os inputs
-            result = namespace['__node_function'](inputs)
-
-            # Calcular tempo de execução
-            execution_time = time.perf_counter() - start_time
-            node.last_execution_time = execution_time
-            node.total_executions += 1
-
-            # Garantir que retorno é tupla
-            if not isinstance(result, tuple):
-                result = (result,)
-
-            # Processar outputs com "_folder" para auto-save
-            result = process_folder_output(result, node.title, project_dir)
-
-            return result
-
-        except Exception as e:
-            # Capturar erro e marcar nó
-            from .node import NodeExecutionState
-            node.has_error = True
-            node.error_message = str(e)
-            node.execution_state = NodeExecutionState.ERROR
-
-            # Imprimir erro detalhado
-            print(f"❌ ERRO em '{node.title}':")
-            print(f"   {type(e).__name__}: {e}")
-            traceback.print_exc()
-
-            # Redesenhar canvas para mostrar erro visualmente
-            from gi.repository import GLib
-            GLib.idle_add(self.queue_draw)
-
-            return None
 
     def on_mouse_released(self, gesture, n_press, x, y):
         """Quando o mouse é solto"""
@@ -2157,215 +1519,8 @@ print("__OUTPUT__:" + output_b64)
             self.queue_draw()
 
     def on_draw(self, area, context, width, height):
-        """Desenha o canvas e todos os nós"""
-        # Fundo com cor configurável
-        bg_color = self._get_color_setting("canvas-bg-color")
-        context.set_source_rgb(*bg_color)
-        context.paint()
-
-        # Salvar estado do contexto
-        context.save()
-
-        # Aplicar transformações de pan e zoom
-        context.translate(self.pan_offset_x, self.pan_offset_y)
-        context.scale(self.zoom_level, self.zoom_level)
-
-        # Grid de fundo com dois níveis (blueprint style)
-        small_grid_size = 20  # Grid fino (menor)
-        large_grid_size = 100  # Grid grosso (maior) - a cada 5 linhas finas
-
-        # Calcular limites visíveis do grid
-        start_x = int(-self.pan_offset_x / self.zoom_level / small_grid_size) * small_grid_size
-        start_y = int(-self.pan_offset_y / self.zoom_level / small_grid_size) * small_grid_size
-        end_x = int((width - self.pan_offset_x) / self.zoom_level) + small_grid_size
-        end_y = int((height - self.pan_offset_y) / self.zoom_level) + small_grid_size
-
-        # Desenhar grid FINO primeiro (mais claro)
-        fine_grid_color = self._get_color_setting("fine-grid-color")
-        context.set_source_rgb(*fine_grid_color)
-        # Linha fina com largura constante na tela (não escala com zoom)
-        context.set_line_width(0.5 / self.zoom_level)
-
-        for x in range(start_x, end_x, small_grid_size):
-            # Pular as linhas que serão grossas
-            if x % large_grid_size != 0:
-                context.move_to(x, start_y)
-                context.line_to(x, end_y)
-        for y in range(start_y, end_y, small_grid_size):
-            # Pular as linhas que serão grossas
-            if y % large_grid_size != 0:
-                context.move_to(start_x, y)
-                context.line_to(end_x, y)
-        context.stroke()
-
-        # Desenhar grid GROSSO por cima (mais escuro)
-        coarse_grid_color = self._get_color_setting("coarse-grid-color")
-        context.set_source_rgb(*coarse_grid_color)
-        # Linha grossa com largura constante na tela (não escala com zoom)
-        context.set_line_width(1.0 / self.zoom_level)
-
-        for x in range(start_x, end_x, large_grid_size):
-            context.move_to(x, start_y)
-            context.line_to(x, end_y)
-        for y in range(start_y, end_y, large_grid_size):
-            context.move_to(start_x, y)
-            context.line_to(end_x, y)
-        context.stroke()
-
-        # Desenhar conexões não selecionadas primeiro (atrás dos nós)
-        self._draw_connections(context, selected_only=False)
-
-        # Preparar cores do tema para os nós
-        theme_colors = {
-            'node_body': self._get_color_setting("node-body-color"),
-            'node_border': self._get_color_setting("node-border-color"),
-            'node_selection': self._get_color_setting("node-selection-color"),
-            'node_running': self._get_color_setting("node-running-color"),
-        }
-
-        # Obter opacidade de dimming se em modo focus
-        dimming_opacity = 1.0
-        if self.focus_node:
-            dimming_opacity = self._get_opacity_setting("focus-dimming-opacity")
-
-        # Desenhar todos os nós
-        for node in self.nodes:
-            # Verificar se o nó deve ser dimmed
-            should_dim = self.focus_node is not None and node not in self.focus_nodes_set
-
-            if should_dim:
-                # Salvar estado e aplicar transparência
-                context.save()
-                context.push_group()
-
-            node.draw(context, theme_colors)
-
-            if should_dim:
-                # Aplicar dimming
-                context.pop_group_to_source()
-                context.paint_with_alpha(dimming_opacity)
-                context.restore()
-
-        # Desenhar conexões selecionadas por cima
-        self._draw_connections(context, selected_only=True)
-
-        # Desenhar retângulo de seleção (se estiver selecionando)
-        if self.selecting_region:
-            x1 = min(self.selection_start_x, self.selection_current_x)
-            y1 = min(self.selection_start_y, self.selection_current_y)
-            x2 = max(self.selection_start_x, self.selection_current_x)
-            y2 = max(self.selection_start_y, self.selection_current_y)
-
-            # Retângulo preenchido semi-transparente
-            selection_fill_color = self._get_color_setting("selection-fill-color")
-            selection_fill_opacity = self._get_opacity_setting("selection-fill-opacity")
-            context.set_source_rgba(*selection_fill_color, selection_fill_opacity)
-            context.rectangle(x1, y1, x2 - x1, y2 - y1)
-            context.fill()
-
-            # Borda do retângulo
-            selection_border_color = self._get_color_setting("selection-border-color")
-            selection_border_opacity = self._get_opacity_setting("selection-border-opacity")
-            context.set_source_rgba(*selection_border_color, selection_border_opacity)
-            context.set_line_width(1.5 / self.zoom_level)
-            context.rectangle(x1, y1, x2 - x1, y2 - y1)
-            context.stroke()
-
-        # Restaurar estado do contexto
-        context.restore()
-
-        # Desenhar info de zoom/pan (fora da transformação)
-        context.set_source_rgb(0.3, 0.3, 0.3)
-        context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-        context.set_font_size(11)
-        info_text = f"Zoom: {self.zoom_level * 100:.0f}% | Pan: ({self.pan_offset_x:.0f}, {self.pan_offset_y:.0f}) | Scroll: zoom | Space+Drag: pan | Right-click: menu"
-        context.move_to(10, height - 10)
-        context.show_text(info_text)
-
-    def _draw_connections(self, context, selected_only=False):
-        """
-        Desenha conexões armazenadas
-
-        Args:
-            context: Cairo context
-            selected_only: Se True, desenha apenas conexões selecionadas
-                          Se False, desenha apenas conexões não selecionadas
-        """
-        # Desenhar cada conexão da lista
-        for connection in self.connections:
-            source_node, out_port, target_node, in_port = connection
-            is_selected = (connection == self.selected_connection)
-
-            # Filtrar baseado no modo
-            if selected_only and not is_selected:
-                continue
-            if not selected_only and is_selected:
-                continue
-
-            # Pegar posições das portas
-            start = source_node.get_output_port_position(out_port)
-            end = target_node.get_input_port_position(in_port)
-
-            # Desenhar se ambas as portas existem
-            if start and end:
-                # Verificar se deve aplicar dimming
-                should_dim = self.focus_node is not None and connection not in self.focus_connections_set
-
-                # Cor e largura diferentes se está selecionada
-                if is_selected:
-                    context.set_line_width(4 / self.zoom_level)
-                    selected_color = self._get_color_setting("connection-selected-color")
-                    alpha = 0.95
-                else:
-                    context.set_line_width(3 / self.zoom_level)
-                    normal_color = self._get_color_setting("connection-normal-color")
-                    selected_color = normal_color  # Usar mesma variável
-                    alpha = 0.75
-
-                # Aplicar dimming se necessário
-                if should_dim:
-                    dimming_opacity = self._get_opacity_setting("focus-dimming-opacity")
-                    alpha *= dimming_opacity
-
-                context.set_source_rgba(*selected_color, alpha)
-                self._draw_connection(context, start, end)
-
-        # Se está criando uma conexão, desenhar linha temporária (sempre por cima)
-        if selected_only and self.creating_connection and self.connection_start_node:
-            start = self.connection_start_node.get_output_port_position(self.connection_start_port)
-            if start:
-                # Linha temporária em cor diferente
-                context.set_line_width(3)
-                creating_color = self._get_color_setting("connection-creating-color")
-                context.set_source_rgba(*creating_color, 0.8)
-                self._draw_connection(context, start, self.connection_mouse_pos)
-
-    def _draw_connection(self, context, start, end):
-        """
-        Desenha uma conexão curva (Bezier) entre duas portas
-
-        Args:
-            context: Cairo context
-            start: (x, y) da porta de saída
-            end: (x, y) da porta de entrada
-        """
-        x1, y1 = start
-        x2, y2 = end
-
-        # Calcular pontos de controle para curva Bezier suave
-        distance = abs(x2 - x1)
-        offset = min(distance * 0.5, 100)
-
-        # Pontos de controle
-        ctrl1_x = x1 + offset
-        ctrl1_y = y1
-        ctrl2_x = x2 - offset
-        ctrl2_y = y2
-
-        # Desenhar curva
-        context.move_to(x1, y1)
-        context.curve_to(ctrl1_x, ctrl1_y, ctrl2_x, ctrl2_y, x2, y2)
-        context.stroke()
+        """Desenha o canvas e todos os nós - delegado para CanvasDrawing"""
+        self.drawing.draw(area, context, width, height)
 
     def _show_node_context_menu(self, node, x, y):
         """
@@ -2386,7 +1541,13 @@ print("__OUTPUT__:" + output_b64)
         menu = Gio.Menu()
 
         # Opções do menu
-        menu.append("Edit Code", "canvas.edit-code")
+        # Só permitir editar código se NÃO for nó por referência
+        if node.code_ref is None:
+            menu.append("Edit Code", "canvas.edit-code")
+        else:
+            # Nó referenciado: mostrar mensagem informativa
+            menu.append("View Referenced Code (read-only)", "canvas.view-ref-code")
+
         menu.append("Rename", "canvas.rename")
         menu.append("Properties", "canvas.properties")
 
@@ -2502,6 +1663,29 @@ print("__OUTPUT__:" + output_b64)
 
         dialog = CodeEditorDialog(window, node)
         dialog.on_apply_callback = lambda code: self._on_code_editor_apply(node, code)
+        dialog.present()
+
+    def view_referenced_code(self):
+        """Abre dialog para visualizar código referenciado (somente leitura)"""
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            return
+
+        node = self.context_menu_node
+        if node.code_ref is None:
+            return  # Não é nó referenciado
+
+        # Encontrar nó original
+        nodes_dict = {n.id: n for n in self.nodes}
+        if node.code_ref not in nodes_dict:
+            print(f"⚠️  Nó referenciado não encontrado (ID: {node.code_ref})")
+            return
+
+        referenced_node = nodes_dict[node.code_ref]
+        window = self.get_root()
+
+        # Abrir editor em modo somente leitura
+        dialog = CodeEditorDialog(window, referenced_node, read_only=True)
+        dialog.set_title(f"Código Referenciado de: {referenced_node.title}")
         dialog.present()
 
     def _on_code_editor_apply(self, node, new_code):

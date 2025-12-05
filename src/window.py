@@ -270,6 +270,11 @@ class AssetsWindow(Adw.ApplicationWindow):
         edit_action.connect("activate", lambda a, p: canvas.edit_node_code())
         canvas.action_group.add_action(edit_action)
 
+        # View Referenced Code action (read-only para nós por referência)
+        view_ref_action = Gio.SimpleAction.new("view-ref-code", None)
+        view_ref_action.connect("activate", lambda a, p: canvas.view_referenced_code())
+        canvas.action_group.add_action(view_ref_action)
+
         # Rename action
         rename_action = Gio.SimpleAction.new("rename", None)
         rename_action.connect("activate", lambda a, p: canvas.rename_node())
@@ -977,7 +982,7 @@ class AssetsWindow(Adw.ApplicationWindow):
 
         def run_in_background():
             # Execute the graph da aba atual
-            success = current_project.canvas.execute_graph()
+            success = current_project.canvas.executor.execute_graph()
 
             # Re-enable button on main thread
             from gi.repository import GLib

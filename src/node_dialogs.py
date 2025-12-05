@@ -10,7 +10,7 @@ from gi.repository import Gtk, Adw, Gio, GtkSource, Gdk
 class CodeEditorDialog(Adw.Window):
     """Dialog Adwaita para editar código Python do nó"""
 
-    def __init__(self, parent, node):
+    def __init__(self, parent, node, read_only=False):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
@@ -19,25 +19,31 @@ class CodeEditorDialog(Adw.Window):
         self.maximize()
 
         self.node = node
+        self.read_only = read_only
 
         # Main box
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
         # Adwaita HeaderBar
         header = Adw.HeaderBar()
-        header.set_title_widget(Adw.WindowTitle(title=f"Edit Code: {node.title}", subtitle="Python Code Editor"))
 
-        # Botão Cancel
-        cancel_button = Gtk.Button(label="Cancel")
-        cancel_button.add_css_class("flat")
-        cancel_button.connect("clicked", lambda b: self.close())
-        header.pack_start(cancel_button)
+        if read_only:
+            header.set_title_widget(Adw.WindowTitle(title=f"View Code: {node.title}", subtitle="Read-Only View"))
+        else:
+            header.set_title_widget(Adw.WindowTitle(title=f"Edit Code: {node.title}", subtitle="Python Code Editor"))
 
-        # Botão Apply (suggested action)
-        apply_button = Gtk.Button(label="Apply")
-        apply_button.add_css_class("suggested-action")
-        apply_button.connect("clicked", self._on_apply)
-        header.pack_end(apply_button)
+        # Botão Close (sempre presente)
+        close_button = Gtk.Button(label="Close" if read_only else "Cancel")
+        close_button.add_css_class("flat")
+        close_button.connect("clicked", lambda b: self.close())
+        header.pack_start(close_button)
+
+        # Botão Apply (só se não for read-only)
+        if not read_only:
+            apply_button = Gtk.Button(label="Apply")
+            apply_button.add_css_class("suggested-action")
+            apply_button.connect("clicked", self._on_apply)
+            header.pack_end(apply_button)
 
         main_box.append(header)
 
@@ -97,6 +103,11 @@ class CodeEditorDialog(Adw.Window):
 
         # Definir código atual
         self.text_buffer.set_text(node.code)
+
+        # Se for read-only, desabilitar edição
+        if read_only:
+            self.text_view.set_editable(False)
+            self.text_view.set_cursor_visible(False)
 
         scrolled.set_child(self.text_view)
         content.append(scrolled)
@@ -365,8 +376,14 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
         page.set_icon_name("text-x-python-symbolic")
 
         group = Adw.PreferencesGroup()
-        group.set_title("Python Code")
-        group.set_description("Return values as tuple: return (output1, output2, ...)")
+
+        # Se for nó referenciado, mostrar mensagem diferente
+        if self.node.code_ref is not None:
+            group.set_title("Referenced Code (Read-Only)")
+            group.set_description("This node references code from another node. Edit the original node to change the code.")
+        else:
+            group.set_title("Python Code")
+            group.set_description("Return values as tuple: return (output1, output2, ...)")
 
         # Editor em um box
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -407,6 +424,11 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
             self.code_buffer.set_style_scheme(scheme)
 
         self.code_buffer.set_text(self.node.code)
+
+        # Se for nó referenciado, desabilitar edição
+        if self.node.code_ref is not None:
+            self.code_view.set_editable(False)
+            self.code_view.set_cursor_visible(False)
 
         scrolled.set_child(self.code_view)
         box.append(scrolled)

@@ -94,6 +94,7 @@ class Node:
 
         # Código Python do nó
         self._code = ""  # Armazenamento interno
+        self.code_ref = None  # Referência ao ID de outro nó (para nós por referência)
 
         # Metadata profissional
         self.description = ""         # Descrição do que o nó faz
@@ -126,13 +127,43 @@ class Node:
 
     @property
     def code(self):
-        """Retorna o código Python do nó"""
+        """Retorna o código Python do nó (próprio, não resolve referência)"""
         return self._code
 
     @code.setter
     def code(self, value):
         """Define o código Python do nó."""
         self._code = value
+
+    def get_effective_code(self, nodes_dict=None):
+        """
+        Retorna o código efetivo do nó, resolvendo referência se necessário.
+
+        Args:
+            nodes_dict: Dicionário {node_id: node} para resolver referências
+                       (necessário apenas se code_ref != None)
+
+        Returns:
+            str: Código efetivo do nó (próprio ou referenciado)
+        """
+        if self.code_ref is None:
+            # Nó normal: usa código próprio
+            return self._code
+
+        # Nó por referência: buscar código do nó referenciado
+        if nodes_dict is None:
+            # Sem dicionário, não consegue resolver (fallback para código próprio)
+            print(f"⚠️  Nó '{self.title}' referencia código de outro nó, mas nodes_dict não fornecido")
+            return self._code
+
+        if self.code_ref not in nodes_dict:
+            # Referência quebrada (nó original foi deletado?)
+            print(f"⚠️  Nó '{self.title}' referencia código de nó inexistente (ID: {self.code_ref})")
+            return self._code
+
+        # Resolver referência
+        referenced_node = nodes_dict[self.code_ref]
+        return referenced_node._code  # Usar código do nó referenciado
 
     def draw(self, context, theme_colors=None):
         """
@@ -162,6 +193,9 @@ class Node:
 
         # 6. Desenhar badge de estado de execução
         self._draw_execution_state_badge(context)
+
+        # 7. Desenhar badge de referência (se for nó referenciado)
+        self._draw_reference_badge(context)
 
     def _draw_rounded_rectangle(self, context, x, y, width, height, radius, top_left=True, top_right=True, bottom_right=True, bottom_left=True):
         """
@@ -702,6 +736,38 @@ class Node:
             context.line_to(badge_x - 4, badge_y + 4)
             context.stroke()
 
+    def _draw_reference_badge(self, context):
+        """Desenha badge indicando que é nó por referência no canto superior direito"""
+        if self.code_ref is None:
+            return  # Não é nó referenciado
+
+        # Posição do badge (canto superior direito do header)
+        badge_x = self.x + self.WIDTH - 12
+        badge_y = self.y + 12
+
+        # Desenhar círculo de fundo (roxo/lilás para indicar referência)
+        context.set_source_rgba(0.6, 0.3, 0.8, 0.7)  # Roxo translúcido
+        context.arc(badge_x, badge_y, 8, 0, 2 * 3.14159)
+        context.fill()
+
+        # Desenhar símbolo de link/corrente (ícone de referência)
+        context.set_source_rgb(1, 1, 1)  # Branco
+        context.set_line_width(1.5)
+
+        # Desenhar dois arcos conectados (símbolo de link)
+        # Arco esquerdo
+        context.arc(badge_x - 2.5, badge_y, 2, 0.3 * 3.14159, 1.7 * 3.14159)
+        context.stroke()
+
+        # Arco direito
+        context.arc(badge_x + 2.5, badge_y, 2, 1.3 * 3.14159, 0.7 * 3.14159)
+        context.stroke()
+
+        # Linha horizontal conectando os arcos
+        context.move_to(badge_x - 1.5, badge_y)
+        context.line_to(badge_x + 1.5, badge_y)
+        context.stroke()
+
     def to_dict(self):
         """
         Serializa o nó para um dicionário (para salvar em arquivo).
@@ -709,7 +775,7 @@ class Node:
         Returns:
             dict: Representação do nó em dicionário
         """
-        return {
+        result = {
             "id": self.id,
             "x": self.x,
             "y": self.y,
@@ -727,6 +793,12 @@ class Node:
             "custom_color": self.custom_color,
             "visibility": self.visibility
         }
+
+        # Incluir code_ref se existir (nó por referência)
+        if self.code_ref is not None:
+            result["code_ref"] = self.code_ref
+
+        return result
     
     @classmethod
     def from_dict(cls, data):
@@ -748,6 +820,7 @@ class Node:
             node_id=data.get("id")
         )
         node.code = data.get("code", "")
+        node.code_ref = data.get("code_ref")  # Carregar referência de código (pode ser None)
         node.description = data.get("description", "")
         node.author = data.get("author", "")
         node.version = data.get("version", "1.0")
