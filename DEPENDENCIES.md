@@ -160,7 +160,7 @@ python3 -m src list-deps ~/mestrado/project.assets
 
 ### Versão do Python
 
-- Wheels são baixados para **Python 3.11** (versão do Flatpak)
+- Wheels são baixados para **Python 3.13** (versão do Flatpak)
 - Se usar outra versão, pode haver incompatibilidades
 
 ### Plataforma

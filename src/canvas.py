@@ -278,6 +278,7 @@ class AssetsCanvas(Gtk.DrawingArea):
         defaults = {
             "selection-fill-opacity": 0.15,
             "selection-border-opacity": 0.6,
+            "focus-dimming-opacity": 0.25,
         }
 
         if self.settings:
