@@ -1272,6 +1272,48 @@ class AssetsCanvas(Gtk.DrawingArea):
         #else:
          #   print("⚠️  Nenhum nó selecionado para duplicar")
 
+    def _add_blank_node_at_context_position(self):
+        """Adiciona um nó em branco na posição do menu de contexto"""
+        if not hasattr(self, 'context_menu_position') or self.context_menu_position is None:
+            # Se não há posição guardada, usar centro do canvas
+            width = self.get_width()
+            height = self.get_height()
+            canvas_x, canvas_y = self._screen_to_canvas(width / 2, height / 2)
+        else:
+            canvas_x, canvas_y = self.context_menu_position
+
+        # Criar nó em branco
+        new_node = Node(
+            canvas_x,
+            canvas_y,
+            "Blank Node",
+            num_inputs=1,
+            num_outputs=1
+        )
+
+        # Código padrão vazio
+        new_node.code = "# Write your Python code here\n# Access inputs via: inputs[0], inputs[1], ...\n# Return outputs as tuple: return (output0, output1, ...)\n\npass"
+        new_node.description = "Empty node"
+
+        # Adicionar nó à lista
+        self.nodes.append(new_node)
+
+        # Registrar no undo
+        self.undo_manager.record_add_node(new_node)
+
+        # Desselecionar todos
+        for node in self.nodes:
+            node.set_selected(False)
+
+        # Selecionar o novo nó
+        new_node.set_selected(True)
+        self.focused_node_index = self.nodes.index(new_node)
+
+        # Redesenhar
+        self.queue_draw()
+
+        print(f"✓ Blank node added at ({canvas_x:.0f}, {canvas_y:.0f})")
+
     def _cut_context_node(self):
         """Recorta o nó do menu de contexto (copia e remove)"""
         if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
@@ -1591,16 +1633,15 @@ class AssetsCanvas(Gtk.DrawingArea):
         """Mostra menu de contexto para o canvas vazio"""
         menu = Gio.Menu()
 
+        # Opção de adicionar nó em branco
+        menu.append("Add Blank Node", "canvas.add-blank-node")
+
         # Opção de colar (se há algo no clipboard)
         window = self.get_root()
         if window and window.clipboard_nodes:
             menu.append("Paste", "canvas.paste")
 
-        # Se menu está vazio, não mostrar
-        if menu.get_n_items() == 0:
-            return
-
-        # Guardar posição do clique em coordenadas de canvas (para paste)
+        # Guardar posição do clique em coordenadas de canvas (para paste e add node)
         canvas_x, canvas_y = self._screen_to_canvas(x, y)
         self.context_menu_position = (canvas_x, canvas_y)
 

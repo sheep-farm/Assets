@@ -308,6 +308,10 @@ class AssetsWindow(Adw.ApplicationWindow):
         paste_action.connect("activate", lambda a, p: self._on_paste_action(canvas))
         canvas.action_group.add_action(paste_action)
 
+        add_blank_node_action = Gio.SimpleAction.new("add-blank-node", None)
+        add_blank_node_action.connect("activate", lambda a, p: canvas._add_blank_node_at_context_position())
+        canvas.action_group.add_action(add_blank_node_action)
+
         # Alignment actions
         align_left = Gio.SimpleAction.new("align-left", None)
         align_left.connect("activate", lambda a, p: canvas.align_selected_nodes("left"))
