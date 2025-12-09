@@ -367,6 +367,11 @@ class AssetsWindow(Adw.ApplicationWindow):
         save_as_action.connect("activate", self._on_save_as)
         self.add_action(save_as_action)
 
+        # Export to Python
+        export_code_action = Gio.SimpleAction.new("export-to-python", None)
+        export_code_action.connect("activate", self.on_export_to_python)
+        self.add_action(export_code_action)
+
         # Close Tab
         close_tab_action = Gio.SimpleAction.new("close-tab", None)
         close_tab_action.connect("activate", self.on_close_tab)
@@ -387,6 +392,7 @@ class AssetsWindow(Adw.ApplicationWindow):
         if app:
             app.set_accels_for_action("win.new", ["<Ctrl>n"])
             app.set_accels_for_action("win.save", ["<Ctrl>s"])
+            app.set_accels_for_action("win.export-to-python", ["<Ctrl><Shift>e"])
             app.set_accels_for_action("win.close-tab", ["<Ctrl>w"])
             app.set_accels_for_action("win.project-settings", ["<Ctrl>comma"])
 
@@ -750,6 +756,63 @@ class AssetsWindow(Adw.ApplicationWindow):
 
             print(f"✓ Saved: {filepath}")
 
+    def on_export_to_python(self, action, param):
+        """Handle Export to Python action"""
+        from .export_to_code import CodeExporter
+
+        project = self.current_tab
+        if not project:
+            toast = Adw.Toast.new("No project open")
+            self.toast_overlay.add_toast(toast)
+            return
+
+        if not project.canvas.nodes:
+            toast = Adw.Toast.new("No nodes to export")
+            self.toast_overlay.add_toast(toast)
+            return
+
+        # Dialog para escolher onde salvar
+        dialog = Gtk.FileDialog()
+        dialog.set_title("Export to Python")
+        dialog.set_initial_name("exported_graph.py")
+
+        # Set initial folder (mesmo diretório do projeto se existir)
+        if project.current_file:
+            folder = Gio.File.new_for_path(str(Path(project.current_file).parent))
+            dialog.set_initial_folder(folder)
+
+        dialog.save(self, None, self._on_export_to_python_finish)
+
+    def _on_export_to_python_finish(self, dialog, result):
+        """Callback for export to python dialog"""
+        try:
+            file = dialog.save_finish(result)
+            if file:
+                filepath = file.get_path()
+
+                # Ensure .py extension
+                if not filepath.endswith('.py'):
+                    filepath += '.py'
+
+                # Export
+                from .export_to_code import CodeExporter
+                project = self.current_tab
+                exporter = CodeExporter(project.canvas)
+
+                success = exporter.export_to_file(filepath)
+
+                if success:
+                    toast = Adw.Toast.new(f"✓ Exported to: {Path(filepath).name}")
+                    self.toast_overlay.add_toast(toast)
+                else:
+                    toast = Adw.Toast.new("❌ Export failed")
+                    self.toast_overlay.add_toast(toast)
+
+        except Exception as e:
+            if "dismissed" not in str(e).lower():
+                print(f"❌ Error exporting: {e}")
+                toast = Adw.Toast.new(f"Error: {e}")
+                self.toast_overlay.add_toast(toast)
 
     def _populate_node_list(self, nodes=None):
         """Populate node list in sidebar"""

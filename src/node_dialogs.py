@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 node_dialogs.py - Dialogs para edição de nós (Adwaita-style)
 """
@@ -610,3 +609,4 @@ class NodePropertiesDialog(Adw.PreferencesWindow):
             "output_types": output_types,
             "visibility": visibility
         }
+

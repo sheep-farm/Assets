@@ -165,6 +165,10 @@ class GraphExecutor:
         Processa outputs especiais e envia para o painel apropriado.
         Usa GLib.idle_add para garantir que está na main thread.
 
+        Suporta metadados:
+        - _table_name, _table_format (csv, parquet, xlsx)
+        - _plot_name
+
         Args:
             output: Output do nó
             node: Nó que gerou o output
@@ -181,14 +185,38 @@ class GraphExecutor:
 
             # Plot matplotlib
             if "_plot" in output:
-                print(f"  → Processando plot output de '{node.title}'")
-                GLib.idle_add(output_panel.add_plot, output["_plot"], f"Plot from: {node.title}")
+                # Extrair nome customizado se fornecido
+                plot_name = output.get("_plot_name", None)
+                if plot_name:
+                    title = f"{plot_name} ({node.title})"
+                else:
+                    title = f"Plot from: {node.title}"
+
+                print(f"  → Processando plot output de '{node.title}' com título: {title}")
+                GLib.idle_add(output_panel.add_plot, output["_plot"], title)
                 return
 
             # Tabela (DataFrame)
             if "_table" in output:
-                print(f"  → Processando table output de '{node.title}'")
-                GLib.idle_add(output_panel.add_table, output["_table"], f"Table from: {node.title}")
+                # Extrair metadados
+                table_name = output.get("_table_name", None)
+                table_format = output.get("_table_format", None)
+
+                # Definir título da aba
+                if table_name:
+                    title = f"{table_name} ({node.title})"
+                else:
+                    title = f"Table from: {node.title}"
+
+                print(f"  → Processando table output de '{node.title}' com título: {title}")
+
+                # Adicionar ao output panel (sempre mostra)
+                GLib.idle_add(output_panel.add_table, output["_table"], title)
+
+                # Se formato foi especificado, salvar arquivo também
+                if table_format:
+                    self._save_table(output["_table"], table_name, table_format, node.title)
+
                 return
 
             # Dados estruturados
@@ -198,6 +226,63 @@ class GraphExecutor:
                 return
 
         # Output normal - não fazer nada (só passa para próximo nó)
+
+    def _save_table(self, table, table_name, table_format, node_title):
+        """
+        Salva tabela em arquivo (CSV, Parquet ou XLSX).
+
+        Args:
+            table: DataFrame para salvar
+            table_name: Nome customizado ou None
+            table_format: 'csv', 'parquet' ou 'xlsx'
+            node_title: Título do nó (fallback para nome)
+        """
+        try:
+            import pandas as pd
+            from pathlib import Path
+            import re
+
+            # Garantir que é DataFrame
+            if not isinstance(table, pd.DataFrame):
+                print(f"  ⚠️  _table não é DataFrame, não pode salvar como {table_format}")
+                return
+
+            # Criar diretório tables/ se não existir
+            output_dir = Path("tables")
+            output_dir.mkdir(exist_ok=True)
+
+            # Sanitizar nome para arquivo seguro
+            if table_name:
+                safe_name = re.sub(r'[^0-9a-zA-Z_-]+', '_', str(table_name).strip())
+            else:
+                safe_name = re.sub(r'[^0-9a-zA-Z_-]+', '_', node_title.strip())
+
+            if not safe_name:
+                safe_name = "table"
+
+            # Validar formato
+            fmt = str(table_format).lower()
+            if fmt not in ("csv", "parquet", "xlsx"):
+                print(f"  ⚠️  Formato '{table_format}' inválido. Use: csv, parquet ou xlsx")
+                fmt = "csv"
+
+            # Caminho completo
+            filename = output_dir / f"{safe_name}.{fmt}"
+
+            # Salvar de acordo com o formato
+            if fmt == "csv":
+                table.to_csv(filename, index=False)
+            elif fmt == "parquet":
+                table.to_parquet(filename, index=False)
+            elif fmt == "xlsx":
+                table.to_excel(filename, index=False)
+
+            print(f"  📁 Tabela salva ({fmt}): {filename}")
+
+        except Exception as e:
+            print(f"  ❌ Erro ao salvar tabela: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _topological_sort(self):
         """

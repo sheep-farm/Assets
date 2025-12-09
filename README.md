@@ -5,45 +5,113 @@
 </p>
 
 <p align="center">
-  <strong>Visual Node-Based Data Analysis for Financial Markets</strong>
+  <strong>Visual Python Programming with Code Export</strong>
 </p>
 
 <p align="center">
-  A professional GNOME application for financial and economic data analysis using a visual node-based programming interface.
+  A modern GNOME application for visual Python development. Design workflows visually, execute them interactively, and export to standalone Python scripts.
 </p>
 
 ---
 
 ## Overview
 
-**Assets** is a modern GTK4/Libadwaita application designed for economists, financial analysts, and data scientists who need to analyze market data, economic indicators, and financial assets in a visual, intuitive way.
+**Assets** is a visual Python programming environment that bridges the gap between visual programming and traditional code. Create Python workflows by connecting nodes on a canvas, execute them interactively, and export to standalone Python scripts for production use.
 
-Instead of writing traditional scripts, you create analysis workflows by connecting visual nodes on a canvas. Each node represents a data operation (fetch data, transform, calculate, visualize), making complex data pipelines easy to understand and modify.
+Unlike traditional node-based tools that lock you into their environment, Assets generates clean, readable Python code that runs independently. This makes it ideal for rapid prototyping, education, and building production-ready data pipelines.
+
+**Key Concept:** Design visually → Execute interactively → Export to Python → Deploy anywhere
+
+### Who Is This For?
+
+- **Data Scientists**: Build ETL pipelines visually, export for production deployment
+- **Data Analysts**: Create analysis workflows without deep programming knowledge
+- **Financial Analysts**: Analyze market data and economic indicators
+- **Students**: Learn Python programming through visual experimentation
+- **Engineers**: Prototype data workflows quickly, then refine the exported code
+- **Researchers**: Build reproducible workflows that can be shared as Python scripts
 
 ## Features
 
 ### Visual Node Editor
-- **Drag-and-drop canvas**: Create data workflows visually
-- **Node-based programming**: Connect nodes to build analysis pipelines
+- **Drag-and-drop canvas**: Create workflows visually with an intuitive interface
+- **Node-based programming**: Connect nodes to build data pipelines
 - **Type-safe connections**: Ports are color-coded by data type (DataFrame, Array, Figure, etc.)
 - **Real-time execution**: See results immediately in the output panel
+- **Parallel execution**: Nodes at the same level execute concurrently
 - **Zoom and pan**: Navigate large workflows easily
 - **Multi-selection**: Select and move multiple nodes at once
 
-### Data Analysis Capabilities
-- **Financial data integration**: Fetch data from Yahoo Finance and other sources
-- **Python code nodes**: Write custom Python code within nodes
-- **Data transformations**: Filter, aggregate, and manipulate datasets
-- **Visualization**: Create charts and plots (matplotlib integration)
+### 🎯 Export to Python (Standalone Scripts)
+**The killer feature that sets Assets apart from other visual tools:**
+
+- **Export to executable Python**: Press `Ctrl+Shift+E` to export your visual workflow as a standalone `.py` script
+- **No dependencies on Assets**: Exported scripts run with just Python and pip-installable packages
+- **Production-ready code**: Clean, readable Python with proper imports and structure
+- **Preserves parallelization**: ThreadPoolExecutor maintains concurrent execution of independent nodes
+- **Command-line interface**: Run exported scripts with optional verbose mode (`-v` flag)
+- **Perfect for deployment**: Use in cron jobs, CI/CD pipelines, Docker containers, or anywhere Python runs
+
+```bash
+# In Assets: Design visually, press Ctrl+Shift+E to export
+# In terminal: Run the exported script
+python3 my_pipeline.py              # Run quietly
+python3 my_pipeline.py -v           # Run with verbose output
+```
+
+### Python Development Environment
+- **Full Python support**: Write custom Python code within each node
+- **Rich data types**: Built-in support for DataFrames, arrays, plots, and more
+- **Standard libraries**: Use pandas, numpy, matplotlib, scipy, and any pip package
+- **Data helpers**: Built-in `load_data()` and `save_data()` functions for common formats
+- **Financial data integration**: Yahoo Finance, FRED API for economic data (but not limited to finance!)
+- **Visualization**: Create matplotlib/seaborn plots that render in the output panel or export
 - **Group nodes**: Organize complex workflows into reusable components
 
 ### Professional Workflow
-- **Save/Load projects**: Persist your analysis workflows
+- **Save/Load projects**: Persist your workflows as `.assets` files
 - **Node library**: Save and reuse custom nodes across projects
 - **Undo/Redo**: Full undo history for all operations
 - **Keyboard shortcuts**: Efficient navigation and editing
 - **Output panel**: View results, console output, and errors
 - **Modern GNOME design**: Clean, native interface following GNOME HIG
+
+## Why Assets?
+
+### The Best of Both Worlds
+
+**Traditional Visual Tools** (Node-RED, Orange, KNIME):
+- ❌ Lock you into their environment
+- ❌ Can't deploy without the tool installed
+- ❌ Hard to version control
+- ❌ Limited to tool-specific workflows
+
+**Traditional Python Scripting**:
+- ❌ Steep learning curve
+- ❌ Hard to visualize complex workflows
+- ❌ Time-consuming to prototype
+
+**Assets Combines Both**:
+- ✅ Visual design for rapid prototyping
+- ✅ Interactive execution with immediate feedback
+- ✅ Export to clean, standalone Python scripts
+- ✅ Git-friendly (both `.assets` projects and exported `.py` code)
+- ✅ No lock-in: exported code runs anywhere Python runs
+- ✅ Production-ready: deploy to cron, CI/CD, containers
+
+### Comparison Table
+
+| Feature | Assets | Node-RED | Orange | KNIME | Python Scripts |
+|---------|--------|----------|--------|-------|----------------|
+| Visual Editor | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Python Code | ✅ | ❌ | ⚠️ | ⚠️ | ✅ |
+| Export Standalone Scripts | ✅ | ❌ | ❌ | ❌ | N/A |
+| No Runtime Dependencies | ✅* | ❌ | ❌ | ❌ | ✅ |
+| Parallel Execution | ✅ | ⚠️ | ⚠️ | ✅ | Manual |
+| Open Source | ✅ | ✅ | ✅ | ⚠️ | ✅ |
+| Native Linux App | ✅ | ❌ | ⚠️ | ❌ | ✅ |
+
+\* Exported scripts only need Python + pip packages
 
 ## Installation
 
@@ -88,42 +156,87 @@ flatpak run com.github.sheep.farm.assets
 
 1. **Add nodes**: Right-click on the canvas → "Add Node from Library"
 2. **Connect nodes**: Click and drag from output ports (right) to input ports (left)
-3. **Configure nodes**: Double-click nodes to edit their code/parameters
+3. **Configure nodes**: Double-click nodes to edit their Python code
 4. **Execute**: Click "Run" or press F5 to execute the workflow
 5. **View results**: Check the Output panel for results and visualizations
+6. **Export**: Press `Ctrl+Shift+E` to export as standalone Python script
 
-### Example: Fetching Stock Data
+### Example 1: Data Analysis Pipeline
 
 ```
-[Yahoo Finance] → [Data Filter] → [Plot Chart] → [Output]
+[Load CSV] → [Filter Data] → [Aggregate] → [Plot Chart]
+                                        ↘ [Export to File]
 ```
 
-1. Add a "Yahoo Finance" node and set the ticker symbol
-2. Connect it to a data transformation node
-3. Connect to a visualization node
-4. Execute to see the chart
+1. Add a "Code" node to load CSV data using pandas
+2. Connect it to transformation nodes (filter, aggregate)
+3. Split output to visualization and export nodes
+4. Execute to see results, then export the entire workflow to Python
+
+### Example 2: Financial Data Analysis
+
+```
+[Yahoo Finance] → [Calculate Returns] → [Statistical Analysis] → [Report]
+```
+
+1. Fetch stock data from Yahoo Finance
+2. Calculate daily returns and moving averages
+3. Run statistical tests (correlations, volatility)
+4. Generate comprehensive report with plots and tables
+
+## Use Cases
+
+Assets is versatile and can be used for various Python workflows:
+
+### Data Science & Analytics
+- ETL pipelines for data cleaning and transformation
+- Statistical analysis and hypothesis testing
+- Machine learning preprocessing workflows
+- Exploratory data analysis (EDA)
+
+### Financial Analysis
+- Market data analysis (stocks, forex, crypto)
+- Economic indicator tracking (FRED API)
+- Portfolio analysis and risk assessment
+- Trading strategy backtesting
+
+### Research & Education
+- Reproducible research workflows
+- Teaching Python programming visually
+- Prototyping algorithms before implementation
+- Collaborative data analysis projects
+
+### DevOps & Automation
+- Data processing pipelines for CI/CD
+- Log analysis and monitoring workflows
+- Automated report generation
+- Batch processing tasks
 
 ## Node Types
 
+All nodes can contain custom Python code. Common patterns include:
+
 ### Data Sources
-- **Yahoo Finance**: Fetch stock/market data
-- **FRED API**: Economic indicators
-- **CSV Import**: Load local datasets
+- **Code nodes**: Load data from CSV, Excel, JSON, Parquet, APIs
+- **Yahoo Finance**: Fetch stock/market data (built-in)
+- **FRED API**: Economic indicators (built-in)
+- **Web scraping**: Use requests/BeautifulSoup for web data
 
 ### Transformations
-- **Filter**: Select rows/columns
-- **Aggregate**: Group and summarize data
-- **Calculate**: Custom calculations
-- **Merge**: Combine multiple datasets
+- **Data manipulation**: pandas operations (filter, merge, groupby)
+- **Calculations**: numpy array operations, custom formulas
+- **Text processing**: String operations, regex, NLP
+- **Feature engineering**: Create derived features for ML
 
-### Outputs
-- **Plot**: Create charts (line, bar, scatter, etc.)
-- **Table**: Display tabular data
-- **Export**: Save results to files
+### Outputs & Visualization
+- **Matplotlib/Seaborn**: Create publication-quality plots
+- **Tables**: Display DataFrames in the output panel
+- **Console output**: Print progress, statistics, logs
+- **File export**: Save to CSV, Excel, JSON, or images
 
 ### Utilities
-- **Code**: Execute custom Python code
-- **Group**: Organize nodes into reusable components
+- **Code**: General-purpose Python execution node
+- **Group**: Organize complex workflows into reusable components
 - **Comment**: Add documentation to your workflow
 
 ## Keyboard Shortcuts
@@ -134,6 +247,7 @@ flatpak run com.github.sheep.farm.assets
 | `Ctrl+O` | Open project |
 | `Ctrl+S` | Save project |
 | `Ctrl+Shift+S` | Save as... |
+| `Ctrl+Shift+E` | **Export to Python** |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Shift+Z` | Redo |
 | `Ctrl+C` | Copy selected nodes |
@@ -157,6 +271,8 @@ Assets/
 │   ├── window.py            # Main window
 │   ├── canvas.py            # Node canvas implementation
 │   ├── node.py              # Node class
+│   ├── graph_executor.py    # Graph execution engine
+│   ├── export_to_code.py    # Export to Python functionality
 │   ├── node_library.py      # Node library system
 │   ├── node_dialogs.py      # Node configuration dialogs
 │   ├── output_panel.py      # Results output panel
@@ -197,15 +313,27 @@ Nodes are defined in JSON files in `~/.nodes/`:
 
 ## Status
 
-This project is currently in **active development**. Features and APIs may change.
+This project is currently in **active development** (v0.1.0). Core features are functional, but APIs may change.
+
+### Current Features
+- ✅ Visual node-based editor
+- ✅ Real-time Python execution
+- ✅ **Export to standalone Python scripts** (`Ctrl+Shift+E`)
+- ✅ Parallel execution (ThreadPoolExecutor)
+- ✅ Project-based dependency management
+- ✅ Rich output panel (tables, plots, console)
+- ✅ Undo/Redo system
+- ✅ Custom node library
 
 ### Planned Features
-- [ ] Additional data sources (Alpha Vantage, Quandl, etc.)
-- [ ] More visualization types
-- [ ] Export workflows as standalone scripts
-- [ ] Collaborative features
-- [ ] Plugin system
-- [ ] Cloud data storage integration
+- [ ] Enhanced code editor with syntax highlighting and autocompletion
+- [ ] Debugger integration (breakpoints, step execution)
+- [ ] Additional data sources (Alpha Vantage, Quandl, databases)
+- [ ] More visualization types (interactive plots, dashboards)
+- [ ] Version control integration (Git diff for workflows)
+- [ ] Collaborative features (shared node libraries)
+- [ ] Plugin/extension system
+- [ ] Cloud storage integration
 
 ## License
 
@@ -219,14 +347,16 @@ See [COPYING](COPYING) for details.
 
 ## Technologies
 
-- **GTK 4** & **Libadwaita** - User Interface
-- **Python 3** - Core logic
-- **Cairo** - Canvas rendering
+- **GTK 4** & **Libadwaita** - Modern GNOME user interface
+- **Python 3.12+** - Core logic and node execution
+- **Cairo** - High-performance canvas rendering
 - **Meson** - Build system
-- **Yahoo Finance API** - Market data
+- **ThreadPoolExecutor** - Parallel node execution
+- **pandas, numpy, matplotlib** - Data science libraries (bundled)
+- **Yahoo Finance & FRED** - Financial data APIs (optional)
 
 ---
 
 <p align="center">
-  <em>A visual approach to financial data analysis</em>
+  <em>Design visually. Execute interactively. Export to Python. Deploy anywhere.</em>
 </p>
