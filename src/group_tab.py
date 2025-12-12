@@ -121,6 +121,11 @@ class GroupTab:
         self.group_node.inner_connections = self.canvas.connections.copy()
 
         print(f"💾 Saved GroupTab changes to {self.group_node.title}")
+        print(f"   Inner nodes: {len(self.group_node.inner_nodes)}")
+        print(f"   Inner connections: {len(self.group_node.inner_connections)}")
+        if self.group_node.output_node:
+            print(f"   OutputNode: {self.group_node.output_node.num_inputs} inputs")
+        print(f"   GroupNode: {self.group_node.num_outputs} outputs")
 
         # Marcar como modificado
         self.is_modified = True
@@ -172,6 +177,11 @@ class GroupTab:
             output_node.num_inputs += 1
             output_node.input_types.append('any')
             output_node.input_docs.append(f"Output {output_node.num_inputs - 1}")
+
+            # Recalcular altura do OutputNode
+            max_ports = max(output_node.num_inputs, output_node.num_outputs)
+            output_node.body_height = max_ports * output_node.HEIGHT_PORT + output_node.PADDING * 2
+            output_node.total_height = output_node.HEIGHT_HEADER + output_node.body_height
 
             # Atualizar GroupNode
             self.group_node.set_output_node(output_node)
