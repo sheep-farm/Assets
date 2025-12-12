@@ -46,7 +46,7 @@ class GroupNode(Node):
         self.node_type = "group"
 
         # Código não editável diretamente
-        self._code = "[GROUP NODE - Edite em aba separada]"
+        self._code = "# [GROUP NODE - Edite em aba separada]"
         self.code_editable = False
 
         # Categoria
@@ -156,7 +156,7 @@ class GroupNode(Node):
         inner_count = len([n for n in self.inner_nodes if getattr(n, 'node_type', 'normal') not in ['input', 'output']])
         cr.show_text(f"GROUP ({inner_count} nodes)")
 
-    def execute_inner_graph(self, external_inputs):
+    def execute_inner_graph(self, external_inputs, project_dir=None):
         """
         Executa o sub-grafo interno.
 
@@ -168,12 +168,17 @@ class GroupNode(Node):
 
         Args:
             external_inputs: Tuple de valores de entrada
+            project_dir: Diretório do projeto (opcional, para data_helpers)
 
         Returns:
             tuple: Valores de saída
         """
         print(f"\n📦 Executando GroupNode: {self.title}")
+        print(f"   External inputs: {external_inputs}")
         print(f"   Nodes internos: {len(self.inner_nodes)}")
+        print(f"   Conexões internas: {len(self.inner_connections)}")
+        if self.output_node:
+            print(f"   OutputNode tem {self.output_node.num_inputs} portas de entrada")
 
         # 1. Verificar se tem InputNode e OutputNode
         if not self.input_node:
@@ -195,6 +200,7 @@ class GroupNode(Node):
 
         # InputNode "retorna" os external_inputs
         node_results[self.input_node] = external_inputs
+        print(f"   InputNode outputs: {external_inputs}")
 
         # 3. Ordenar nós internos topologicamente
         execution_order = self._topological_sort_inner()
@@ -207,29 +213,76 @@ class GroupNode(Node):
 
         # 4. Executar cada nó interno (exceto InputNode que já foi "executado")
         for node in execution_order:
-            if node == self.input_node:
+            # Pular InputNode (já processado)
+            node_type = getattr(node, 'node_type', 'normal')
+            if node_type == 'input' or node == self.input_node:
                 continue  # Já processado
 
             try:
                 # Coletar inputs deste nó
                 inputs = self._collect_inner_node_inputs(node, node_results)
+                print(f"      Inputs de {node.title} ({node.num_inputs} portas): {inputs}")
 
                 # Se é OutputNode, apenas guardar inputs
-                if node == self.output_node:
+                if node_type == 'output' or node == self.output_node:
                     node_results[node] = inputs
                     print(f"      ✓ {node.title} (coletou outputs)")
+                    continue
+
+                # Se é GroupNode aninhado, executar recursivamente
+                if isinstance(node, GroupNode):
+                    print(f"      📦 GroupNode aninhado: {node.title}")
+                    result = node.execute_inner_graph(inputs, project_dir=project_dir)
+                    if not isinstance(result, tuple):
+                        result = (result,)
+                    node_results[node] = result
+                    print(f"      ✓ {node.title} (GroupNode) → outputs: {result if len(str(result)) < 100 else str(result)[:100] + '...'}")
                     continue
 
                 # Executar código do nó
                 effective_code = node.get_effective_code({n.id: n for n in self.inner_nodes})
 
-                if effective_code and effective_code.strip():
+                # Verificar se há código executável (não apenas comentários/whitespace)
+                has_executable_code = False
+                if effective_code:
+                    for line in effective_code.split('\n'):
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith('#'):
+                            has_executable_code = True
+                            break
+
+                if has_executable_code:
                     # Transformar código em função
                     code_as_function = "def __node_function(inputs):\n"
                     for line in effective_code.split('\n'):
                         code_as_function += f"    {line}\n"
 
-                    namespace = {'__builtins__': __builtins__}
+                    # Criar namespace com bibliotecas comuns (igual ao graph_executor)
+                    from pathlib import Path
+                    namespace = {
+                        '__builtins__': __builtins__,
+                        # Bibliotecas comuns
+                        'pd': __import__('pandas'),
+                        'np': __import__('numpy'),
+                        'plt': __import__('matplotlib.pyplot'),
+                        'Path': Path,
+                        # Diretórios úteis
+                        'nodes_dir': Path.home() / ".nodes",
+                        'home_dir': Path.home(),
+                    }
+
+                    # Adicionar data_helpers se project_dir disponível
+                    if project_dir:
+                        from .data_helpers import create_data_helpers
+                        helpers = create_data_helpers(project_dir)
+                        namespace.update({
+                            'load_data': helpers['load_data'],
+                            'save_data': helpers['save_data'],
+                            'load': helpers['load'],
+                            'save': helpers['save'],
+                            'project_dir': helpers['project_dir'],
+                        })
+
                     exec(code_as_function, namespace)
 
                     # Executar
@@ -240,7 +293,7 @@ class GroupNode(Node):
                         result = (result,)
 
                     node_results[node] = result
-                    print(f"      ✓ {node.title}")
+                    print(f"      ✓ {node.title} → outputs: {result if len(str(result)) < 100 else str(result)[:100] + '...'}")
                 else:
                     # Nó sem código: passar inputs como outputs
                     node_results[node] = inputs
@@ -253,8 +306,18 @@ class GroupNode(Node):
                 node_results[node] = (None,) * node.num_outputs
 
         # 5. Extrair outputs do OutputNode
-        if self.output_node in node_results:
-            outputs = node_results[self.output_node]
+        output_found = False
+        outputs = None
+
+        # Buscar OutputNode nos resultados (por tipo, não por identidade)
+        for node, result in node_results.items():
+            node_type = getattr(node, 'node_type', 'normal')
+            if node_type == 'output' or node == self.output_node:
+                outputs = result
+                output_found = True
+                break
+
+        if output_found and outputs is not None:
             print(f"✓ GroupNode {self.title} concluído")
             return outputs
         else:
@@ -302,14 +365,41 @@ class GroupNode(Node):
 
     def _collect_inner_node_inputs(self, node, node_results):
         """Coleta inputs de um nó interno baseado nas conexões"""
-        inputs = [None] * node.num_inputs
+        # Usar listas para acumular múltiplas conexões na mesma porta
+        inputs_accumulator = [[] for _ in range(node.num_inputs)]
+
+        # Criar mapa de IDs para resultados (para evitar problemas de identidade)
+        id_to_result = {n.id: result for n, result in node_results.items()}
+
+        # Debug: contar conexões encontradas
+        connections_found = 0
 
         # Para cada conexão que entra neste nó
         for src_node, src_port, dst_node, dst_port in self.inner_connections:
-            if dst_node == node and src_node in node_results:
-                source_outputs = node_results[src_node]
+            # Comparar por ID ao invés de identidade de objeto
+            if dst_node.id == node.id and src_node.id in id_to_result:
+                source_outputs = id_to_result[src_node.id]
                 if src_port < len(source_outputs):
-                    inputs[dst_port] = source_outputs[src_port]
+                    # Acumular valor na lista da porta
+                    inputs_accumulator[dst_port].append(source_outputs[src_port])
+                    connections_found += 1
+                    print(f"         └─ Conexão: {src_node.title}[{src_port}] → {node.title}[{dst_port}] = {source_outputs[src_port]}")
+
+        if connections_found == 0 and node.num_inputs > 0:
+            print(f"         ⚠️  Nenhuma conexão encontrada para {node.title}")
+
+        # Converter acumuladores para valores finais
+        inputs = []
+        for port_values in inputs_accumulator:
+            if len(port_values) == 0:
+                # Nenhuma conexão: None
+                inputs.append(None)
+            elif len(port_values) == 1:
+                # Uma conexão: valor direto
+                inputs.append(port_values[0])
+            else:
+                # Múltiplas conexões: lista
+                inputs.append(port_values)
 
         return tuple(inputs)
 
