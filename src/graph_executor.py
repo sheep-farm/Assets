@@ -625,6 +625,13 @@ print("__OUTPUT__:" + output_b64)
         Returns:
             tuple: Tupla com outputs do nó, ou None se erro
         """
+        # DETECTAR E EXECUTAR GROUPNODE
+        from .group_node import GroupNode
+
+        if isinstance(node, GroupNode):
+            print(f"📦 Executando GroupNode: {node.title}")
+            return node.execute_inner_graph(inputs)
+
         # Criar dicionário de nós para resolver referências de código
         nodes_dict = {n.id: n for n in self.canvas.nodes}
 

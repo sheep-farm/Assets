@@ -231,6 +231,67 @@ class AssetsWindow(Adw.ApplicationWindow):
 
         return project
 
+    def open_group_tab(self, group_node):
+        """
+        Abre uma aba dedicada para editar o conteúdo de um GroupNode.
+
+        Args:
+            group_node: GroupNode a ser editado
+        """
+        from .group_tab import GroupTab
+
+        print(f"📦 Abrindo aba de edição para GroupNode: {group_node.title}")
+
+        # Criar GroupTab
+        group_tab = GroupTab(group_node, parent_window=self)
+
+        # Criar página na TabView
+        page = self.tab_view.append(group_tab.get_widget())
+
+        # Definir título e tooltip
+        page.set_title(group_tab.get_title())
+        page.set_tooltip(group_tab.get_tooltip())
+
+        # Guardar referência ao GroupTab na página
+        page.group_tab = group_tab
+
+        # Selecionar a nova aba
+        self.tab_view.set_selected_page(page)
+
+        # Conectar canvas actions para o canvas interno do GroupTab
+        # (para que o menu funcione dentro do group)
+        if hasattr(group_tab, 'canvas'):
+            from .project_tab import ProjectTab
+            # Criar um projeto "dummy" para usar o mesmo sistema de actions
+            dummy_project = type('obj', (object,), {'canvas': group_tab.canvas})()
+            self._setup_canvas_actions_for_project(dummy_project)
+
+        print(f"✓ Aba de GroupNode aberta")
+
+    def close_group_tab(self, group_tab):
+        """
+        Fecha a aba de edição de um GroupNode.
+
+        Args:
+            group_tab: GroupTab a ser fechado
+        """
+        print(f"🔒 Fechando aba de GroupNode: {group_tab.group_node.title}")
+
+        # Chamar on_closing para salvar mudanças
+        if hasattr(group_tab, 'on_closing'):
+            group_tab.on_closing()
+
+        # Encontrar e fechar a página
+        n_pages = self.tab_view.get_n_pages()
+        for i in range(n_pages):
+            page = self.tab_view.get_nth_page(i)
+            if hasattr(page, 'group_tab') and page.group_tab == group_tab:
+                self.tab_view.close_page(page)
+                print(f"✓ Aba fechada")
+                return
+
+        print(f"⚠️  Aba não encontrada para fechar")
+
     def _on_tab_changed(self, tab_view, param):
         """Chamado quando a aba ativa muda"""
         page = tab_view.get_selected_page()
@@ -345,6 +406,23 @@ class AssetsWindow(Adw.ApplicationWindow):
         distribute_v = Gio.SimpleAction.new("distribute-v", None)
         distribute_v.connect("activate", lambda a, p: canvas.distribute_selected_nodes("vertical"))
         canvas.action_group.add_action(distribute_v)
+
+        # GroupNode actions
+        create_group_action = Gio.SimpleAction.new("create-empty-group", None)
+        create_group_action.connect("activate", lambda a, p: canvas.create_empty_group())
+        canvas.action_group.add_action(create_group_action)
+
+        pack_group_action = Gio.SimpleAction.new("pack-into-group", None)
+        pack_group_action.connect("activate", lambda a, p: canvas.pack_into_group())
+        canvas.action_group.add_action(pack_group_action)
+
+        unpack_group_action = Gio.SimpleAction.new("unpack-group", None)
+        unpack_group_action.connect("activate", lambda a, p: canvas.unpack_group())
+        canvas.action_group.add_action(unpack_group_action)
+
+        edit_group_action = Gio.SimpleAction.new("edit-group", None)
+        edit_group_action.connect("activate", lambda a, p: canvas.edit_group())
+        canvas.action_group.add_action(edit_group_action)
 
         # Connect canvas signal to update node list when library changes
         # self.canvas.connect("node-saved-to-library", lambda c: self._populate_node_list())
@@ -563,7 +641,21 @@ class AssetsWindow(Adw.ApplicationWindow):
                     node_id_map = {}
 
                     for node_data in graph_data.get("nodes", []):
-                        node = Node.from_dict(node_data)
+                        # Detectar tipo de node e usar from_dict apropriado
+                        node_type = node_data.get('node_type', 'normal')
+
+                        if node_type == 'group':
+                            from .group_node import GroupNode
+                            node = GroupNode.from_dict(node_data)
+                        elif node_type == 'input':
+                            from .input_node import InputNode
+                            node = InputNode.from_dict(node_data)
+                        elif node_type == 'output':
+                            from .output_node import OutputNode
+                            node = OutputNode.from_dict(node_data)
+                        else:
+                            node = Node.from_dict(node_data)
+
                         nodes.append(node)
                         node_id_map[node.id] = node
 

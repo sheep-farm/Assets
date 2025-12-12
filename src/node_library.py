@@ -157,24 +157,60 @@ class NodeLibrary:
                     "nodes": []
                 }
 
-            # Criar template do nó com todos os metadados
-            node_template = {
-                "name": node.title,
-                "description": node.description or f"Custom node: {node.title}",
-                "num_inputs": node.num_inputs,
-                "num_outputs": node.num_outputs,
-                "default_code": node.code.split('\n') if node.code else [],
-                "author": node.author,
-                "version": node.version,
-                "tags": node.tags,
-                "category": node.category,
-                "input_docs": node.input_docs,
-                "output_docs": node.output_docs,
-                "input_types": node.input_types,
-                "output_types": node.output_types,
-                "color": list(node.custom_color) if node.custom_color else None,
-                "visibility": visibility  # "private" ou "public"
-            }
+            # Verificar se é GroupNode
+            node_type = getattr(node, 'node_type', 'normal')
+
+            if node_type == 'group':
+                # Serializar GroupNode completamente
+                node_template = {
+                    "name": node.title,
+                    "description": node.description or f"GroupNode: {node.title}",
+                    "node_type": "group",
+                    "num_inputs": node.num_inputs,
+                    "num_outputs": node.num_outputs,
+                    "author": node.author,
+                    "version": node.version,
+                    "tags": node.tags,
+                    "category": node.category,
+                    "input_docs": node.input_docs,
+                    "output_docs": node.output_docs,
+                    "input_types": node.input_types,
+                    "output_types": node.output_types,
+                    "color": list(node.custom_color) if node.custom_color else None,
+                    "visibility": visibility,
+                    # Dados específicos do GroupNode
+                    "inner_nodes": [n.to_dict() for n in node.inner_nodes],
+                    "inner_connections": [
+                        {
+                            'src_id': src.id,
+                            'src_port': src_p,
+                            'dst_id': dst.id,
+                            'dst_port': dst_p
+                        }
+                        for src, src_p, dst, dst_p in node.inner_connections
+                    ],
+                    "input_node_id": node.input_node.id if node.input_node else None,
+                    "output_node_id": node.output_node.id if node.output_node else None
+                }
+            else:
+                # Criar template do nó normal com todos os metadados
+                node_template = {
+                    "name": node.title,
+                    "description": node.description or f"Custom node: {node.title}",
+                    "num_inputs": node.num_inputs,
+                    "num_outputs": node.num_outputs,
+                    "default_code": node.code.split('\n') if node.code else [],
+                    "author": node.author,
+                    "version": node.version,
+                    "tags": node.tags,
+                    "category": node.category,
+                    "input_docs": node.input_docs,
+                    "output_docs": node.output_docs,
+                    "input_types": node.input_types,
+                    "output_types": node.output_types,
+                    "color": list(node.custom_color) if node.custom_color else None,
+                    "visibility": visibility  # "private" ou "public"
+                }
 
             # Verificar se já existe nó com mesmo nome
             existing_nodes = data[category_name]["nodes"]
@@ -584,37 +620,98 @@ def create_node_from_template(template, x, y):
     """
     from .node import Node
 
-    node = Node(
-        x=x,
-        y=y,
-        title=template["name"],
-        num_inputs=template["num_inputs"],
-        num_outputs=template["num_outputs"]
-    )
+    # Verificar se é um GroupNode
+    node_type = template.get("node_type", "normal")
 
-    # Suporta default_code como string ou array de linhas
-    code = template.get("default_code", "")
-    if isinstance(code, list):
-        code = "\n".join(code)
+    if node_type == "group":
+        from .group_node import GroupNode
+        from .input_node import InputNode
+        from .output_node import OutputNode
 
-    node.code = code
+        # Criar GroupNode
+        group = GroupNode(
+            x=x,
+            y=y,
+            title=template["name"]
+        )
 
-    # Metadata adicional
-    node.description = template.get("description", "")
-    node.author = template.get("author", "")
-    node.version = template.get("version", "1.0")
-    node.tags = template.get("tags", [])
-    node.category = template.get("_category", template.get("category", ""))
-    node.input_docs = template.get("input_docs", [])
-    node.output_docs = template.get("output_docs", [])
+        # Metadata
+        group.description = template.get("description", "")
+        group.author = template.get("author", "")
+        group.version = template.get("version", "1.0")
+        group.tags = template.get("tags", [])
+        group.category = template.get("_category", template.get("category", ""))
 
-    # Cor customizada
-    if "color" in template:
-        color = template["color"]
-        if isinstance(color, list) and len(color) == 3:
-            node.custom_color = tuple(color)
+        # Cor customizada
+        if "color" in template:
+            color = template["color"]
+            if isinstance(color, list) and len(color) == 3:
+                group.custom_color = tuple(color)
 
-    return node
+        # Reconstruir nodes internos
+        node_map = {}
+        for node_data in template.get("inner_nodes", []):
+            inner_node_type = node_data.get('node_type', 'normal')
+
+            if inner_node_type == 'input':
+                inner_node = InputNode.from_dict(node_data)
+                group.set_input_node(inner_node)
+            elif inner_node_type == 'output':
+                inner_node = OutputNode.from_dict(node_data)
+                group.set_output_node(inner_node)
+            elif inner_node_type == 'group':
+                inner_node = GroupNode.from_dict(node_data)
+            else:
+                inner_node = Node.from_dict(node_data)
+
+            group.add_inner_node(inner_node)
+            node_map[inner_node.id] = inner_node
+
+        # Reconstruir conexões
+        for conn_data in template.get("inner_connections", []):
+            src = node_map.get(conn_data['src_id'])
+            dst = node_map.get(conn_data['dst_id'])
+            if src and dst:
+                group.add_inner_connection(
+                    src, conn_data['src_port'],
+                    dst, conn_data['dst_port']
+                )
+
+        return group
+
+    else:
+        # Criar nó normal
+        node = Node(
+            x=x,
+            y=y,
+            title=template["name"],
+            num_inputs=template["num_inputs"],
+            num_outputs=template["num_outputs"]
+        )
+
+        # Suporta default_code como string ou array de linhas
+        code = template.get("default_code", "")
+        if isinstance(code, list):
+            code = "\n".join(code)
+
+        node.code = code
+
+        # Metadata adicional
+        node.description = template.get("description", "")
+        node.author = template.get("author", "")
+        node.version = template.get("version", "1.0")
+        node.tags = template.get("tags", [])
+        node.category = template.get("_category", template.get("category", ""))
+        node.input_docs = template.get("input_docs", [])
+        node.output_docs = template.get("output_docs", [])
+
+        # Cor customizada
+        if "color" in template:
+            color = template["color"]
+            if isinstance(color, list) and len(color) == 3:
+                node.custom_color = tuple(color)
+
+        return node
 
 
 # Funções utilitárias adicionais

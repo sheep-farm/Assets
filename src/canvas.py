@@ -1602,6 +1602,16 @@ class AssetsCanvas(Gtk.DrawingArea):
         menu.append_section(None, clipboard_section)
 
         menu.append("Save to Library", "canvas.save-to-library")
+
+        # Seção especial para GroupNode
+        from .group_node import GroupNode
+        if isinstance(node, GroupNode):
+            group_section = Gio.Menu()
+            group_section.append("✏️ Edit Group", "canvas.edit-group")
+            group_section.append("📤 Unpack Group", "canvas.unpack-group")
+            group_section.append("💾 Save Group to Library", "canvas.save-to-library")
+            menu.append_section("Group", group_section)
+
         menu.append("Delete", "canvas.delete")
 
         print(f"✓ Menu criado com itens de clipboard")
@@ -1635,6 +1645,9 @@ class AssetsCanvas(Gtk.DrawingArea):
 
         # Opção de adicionar nó em branco
         menu.append("Add Blank Node", "canvas.add-blank-node")
+
+        # Opção de criar GroupNode
+        menu.append("📦 Create Empty Group", "canvas.create-empty-group")
 
         # Opção de colar (se há algo no clipboard)
         window = self.get_root()
@@ -1680,6 +1693,11 @@ class AssetsCanvas(Gtk.DrawingArea):
         distribute_section.append("Distribute Horizontally", "canvas.distribute-h")
         distribute_section.append("Distribute Vertically", "canvas.distribute-v")
         menu.append_section("Distribution", distribute_section)
+
+        # Seção de GroupNode
+        group_section = Gio.Menu()
+        group_section.append("📦 Pack into Group", "canvas.pack-into-group")
+        menu.append_section("Group", group_section)
 
         # Criar popover
         popover = Gtk.PopoverMenu()
@@ -1984,3 +2002,175 @@ class AssetsCanvas(Gtk.DrawingArea):
                 current_y += node.total_height + gap
 
         self.queue_draw()
+
+    # =================================================================
+    # GROUPNODE METHODS
+    # =================================================================
+
+    def create_empty_group(self):
+        """Cria um GroupNode vazio na posição do menu de contexto"""
+        from .group_node import GroupNode
+        from .input_node import InputNode
+        from .output_node import OutputNode
+
+        # Obter posição do menu
+        if hasattr(self, 'context_menu_position') and self.context_menu_position:
+            x, y = self.context_menu_position
+        else:
+            x, y = 100, 100
+
+        # Criar GroupNode
+        group = GroupNode(x, y, title="New Group")
+
+        # Criar InputNode e OutputNode padrão
+        input_node = InputNode(50, 100, num_outputs=1)
+        output_node = OutputNode(500, 100, num_inputs=1)
+
+        group.add_inner_node(input_node)
+        group.add_inner_node(output_node)
+        group.set_input_node(input_node)
+        group.set_output_node(output_node)
+
+        # Adicionar ao canvas
+        self.nodes.append(group)
+        self.selection.clear()
+        self.selection.add(group)
+
+        self.queue_draw()
+        self.save_undo_state("Create Empty Group")
+
+        print(f"✓ Created empty GroupNode: {group.id}")
+
+    def pack_into_group(self):
+        """Empacota nodes selecionados em um GroupNode"""
+        from .group_packer import GroupPacker
+
+        # Obter nodes selecionados
+        selected = [n for n in self.nodes if n.selected]
+
+        if len(selected) < 1:
+            print("⚠️  Nenhum node selecionado para empacotar")
+            return
+
+        print(f"📦 Empacotando {len(selected)} nodes...")
+
+        try:
+            # Usar GroupPacker para empacotar
+            group, new_connections, connections_to_remove = GroupPacker.pack_nodes(
+                nodes=selected,
+                all_connections=self.connections,
+                title=f"Group of {len(selected)}"
+            )
+
+            # Remover conexões antigas
+            for conn in connections_to_remove:
+                if conn in self.connections:
+                    self.connections.remove(conn)
+
+            # Adicionar novas conexões
+            for conn in new_connections:
+                self.connections.append(conn)
+
+            # Remover nodes empacotados do canvas
+            for node in selected:
+                if node in self.nodes:
+                    self.nodes.remove(node)
+
+            # Adicionar GroupNode ao canvas
+            self.nodes.append(group)
+
+            # Selecionar o grupo criado
+            self.selection.clear()
+            self.selection.add(group)
+
+            self.queue_draw()
+            self.save_undo_state("Pack into Group")
+
+            print(f"✓ Grupo criado com sucesso!")
+
+        except Exception as e:
+            print(f"❌ Erro ao empacotar: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def unpack_group(self):
+        """Desempacota o GroupNode selecionado"""
+        from .group_packer import GroupPacker
+        from .group_node import GroupNode
+
+        # Verificar se há um GroupNode no context menu
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            print("⚠️  Nenhum node no contexto")
+            return
+
+        node = self.context_menu_node
+
+        if not isinstance(node, GroupNode):
+            print("⚠️  Node selecionado não é um GroupNode")
+            return
+
+        print(f"📤 Desempacotando: {node.title}")
+
+        try:
+            # Usar GroupPacker para desempacotar
+            unpacked_nodes, new_connections, connections_to_remove = GroupPacker.unpack_group(
+                group_node=node,
+                canvas_connections=self.connections
+            )
+
+            # Remover conexões antigas
+            for conn in connections_to_remove:
+                if conn in self.connections:
+                    self.connections.remove(conn)
+
+            # Adicionar novas conexões
+            for conn in new_connections:
+                self.connections.append(conn)
+
+            # Remover GroupNode do canvas
+            if node in self.nodes:
+                self.nodes.remove(node)
+
+            # Adicionar nodes desempacotados
+            for unpacked_node in unpacked_nodes:
+                if unpacked_node not in self.nodes:
+                    self.nodes.append(unpacked_node)
+
+            # Selecionar nodes desempacotados
+            self.selection.clear()
+            for unpacked_node in unpacked_nodes:
+                self.selection.add(unpacked_node)
+
+            self.queue_draw()
+            self.save_undo_state("Unpack Group")
+
+            print(f"✓ Grupo desempacotado com sucesso!")
+
+        except Exception as e:
+            print(f"❌ Erro ao desempacotar: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def edit_group(self):
+        """Abre aba de edição do GroupNode"""
+        from .group_node import GroupNode
+
+        # Verificar se há um GroupNode no context menu
+        if not hasattr(self, 'context_menu_node') or self.context_menu_node is None:
+            print("⚠️  Nenhum node no contexto")
+            return
+
+        node = self.context_menu_node
+
+        if not isinstance(node, GroupNode):
+            print("⚠️  Node selecionado não é um GroupNode")
+            return
+
+        print(f"✏️  Abrindo edição de: {node.title}")
+
+        # Pedir à window para abrir GroupTab
+        window = self.get_root()
+        if hasattr(window, 'open_group_tab'):
+            window.open_group_tab(node)
+        else:
+            print("❌ Window não tem método open_group_tab")

@@ -54,6 +54,11 @@ assets_sources = [
   'system_venv.py',
   'preferences_dialog.py',
   'export_to_code.py',
+  'group_node.py',
+  'input_node.py',
+  'output_node.py',
+  'group_packer.py',
+  'group_tab.py',
 ]
 
 install_data(assets_sources, install_dir: moduledir)
