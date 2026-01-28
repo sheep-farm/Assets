@@ -247,14 +247,100 @@ class PlotsTab(Gtk.Box):
         canvas.set_size_request(800, 400)
         self._figures.append(figure)
 
-        # Colocar dentro de um ScrolledWindow para segurança
+        # Container principal para plot + botão
+        plot_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+
+        # Toolbar com botão de salvar
+        toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        toolbar.set_margin_top(6)
+        toolbar.set_margin_start(6)
+        toolbar.set_margin_end(6)
+
+        # Spacer para empurrar botão para a direita
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        toolbar.append(spacer)
+
+        # Botão de salvar
+        save_btn = Gtk.Button(label="💾 Salvar Imagem")
+        save_btn.connect("clicked", self._on_save_plot_clicked, figure, title)
+        toolbar.append(save_btn)
+
+        plot_box.append(toolbar)
+
+        # Colocar canvas dentro de um ScrolledWindow
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_child(canvas)
+        scrolled.set_vexpand(True)
+        scrolled.set_hexpand(True)
+
+        plot_box.append(scrolled)
 
         tab_label = Gtk.Label(label=title or "Plot")
-        self.sub.append_page(scrolled, tab_label)
+        self.sub.append_page(plot_box, tab_label)
         self.sub.set_current_page(self.sub.get_n_pages() - 1)
         print(f"✓ Plot em aba: {title}", file=sys.__stdout__)
+
+    def _on_save_plot_clicked(self, button, figure, title):
+        """Callback para salvar o plot como imagem"""
+        from gi.repository import Gio
+
+        # Criar diálogo de salvar arquivo
+        dialog = Gtk.FileChooserDialog(
+            title="Salvar Gráfico",
+            action=Gtk.FileChooserAction.SAVE,
+        )
+        dialog.set_modal(True)
+        dialog.set_transient_for(self.get_root())
+
+        # Adicionar botões
+        dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Salvar", Gtk.ResponseType.ACCEPT)
+
+        # Definir nome padrão do arquivo
+        safe_title = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in title)
+        dialog.set_current_name(f"{safe_title}.png")
+
+        # Adicionar filtros de formato
+        filter_png = Gtk.FileFilter()
+        filter_png.set_name("PNG Image (*.png)")
+        filter_png.add_pattern("*.png")
+        dialog.add_filter(filter_png)
+
+        filter_pdf = Gtk.FileFilter()
+        filter_pdf.set_name("PDF Document (*.pdf)")
+        filter_pdf.add_pattern("*.pdf")
+        dialog.add_filter(filter_pdf)
+
+        filter_svg = Gtk.FileFilter()
+        filter_svg.set_name("SVG Vector (*.svg)")
+        filter_svg.add_pattern("*.svg")
+        dialog.add_filter(filter_svg)
+
+        filter_jpg = Gtk.FileFilter()
+        filter_jpg.set_name("JPEG Image (*.jpg)")
+        filter_jpg.add_pattern("*.jpg")
+        filter_jpg.add_pattern("*.jpeg")
+        dialog.add_filter(filter_jpg)
+
+        # Callback de resposta
+        dialog.connect("response", self._on_save_dialog_response, figure)
+        dialog.show()
+
+    def _on_save_dialog_response(self, dialog, response, figure):
+        """Callback quando o usuário responde ao diálogo de salvar"""
+        if response == Gtk.ResponseType.ACCEPT:
+            file = dialog.get_file()
+            if file:
+                filepath = file.get_path()
+                try:
+                    # Salvar a figura usando matplotlib
+                    figure.savefig(filepath, dpi=300, bbox_inches='tight')
+                    print(f"✓ Gráfico salvo em: {filepath}", file=sys.__stdout__)
+                except Exception as e:
+                    print(f"❌ Erro ao salvar gráfico: {e}", file=sys.__stdout__)
+
+        dialog.destroy()
 
 
 # ===================== Tables =====================
@@ -277,12 +363,15 @@ class TablesTab(Gtk.Box):
         self.sub.set_scrollable(True)
         self.append(self.sub)
 
+        self._dataframes = []  # armazenar DataFrames para salvar depois
+
     def count(self) -> int:
         return self.sub.get_n_pages()
 
     def clear(self):
         while self.sub.get_n_pages() > 0:
             self.sub.remove_page(0)
+        self._dataframes.clear()
 
     def add_table(self, dataframe, title="Table"):
         # Verificar limite de tabelas
@@ -290,6 +379,33 @@ class TablesTab(Gtk.Box):
             print(f"⚠️  Limite de {self.MAX_TABLES} tabelas atingido. Removendo a mais antiga.", file=sys.__stdout__)
             # Remover primeira tabela (mais antiga)
             self.sub.remove_page(0)
+            # Remover dataframe correspondente
+            if self._dataframes:
+                self._dataframes.pop(0)
+
+        # Armazenar DataFrame para salvar depois
+        self._dataframes.append(dataframe)
+
+        # Container principal para tabela + botão
+        table_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+
+        # Toolbar com botão de salvar
+        toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        toolbar.set_margin_top(6)
+        toolbar.set_margin_start(6)
+        toolbar.set_margin_end(6)
+
+        # Spacer para empurrar botão para a direita
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        toolbar.append(spacer)
+
+        # Botão de salvar
+        save_btn = Gtk.Button(label="💾 Salvar CSV")
+        save_btn.connect("clicked", self._on_save_table_clicked, dataframe, title)
+        toolbar.append(save_btn)
+
+        table_box.append(toolbar)
 
         # Render simples como texto monoespaçado
         text_view = Gtk.TextView()
@@ -311,13 +427,75 @@ class TablesTab(Gtk.Box):
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_hexpand(True)   # ocupa horizontalmente
         scrolled.set_vexpand(True)   # ocupa verticalmente
-        #scrolled.set_size_request(-1, 320)
         scrolled.set_child(text_view)
 
+        table_box.append(scrolled)
+
         tab_label = Gtk.Label(label=title or "Table")
-        self.sub.append_page(scrolled, tab_label)
+        self.sub.append_page(table_box, tab_label)
         self.sub.set_current_page(self.sub.get_n_pages() - 1)
         print(f"✓ Tabela em aba: {title}", file=sys.__stdout__)
+
+    def _on_save_table_clicked(self, button, dataframe, title):
+        """Callback para salvar a tabela como CSV"""
+        from gi.repository import Gio
+
+        # Criar diálogo de salvar arquivo
+        dialog = Gtk.FileChooserDialog(
+            title="Salvar Tabela",
+            action=Gtk.FileChooserAction.SAVE,
+        )
+        dialog.set_modal(True)
+        dialog.set_transient_for(self.get_root())
+
+        # Adicionar botões
+        dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Salvar", Gtk.ResponseType.ACCEPT)
+
+        # Definir nome padrão do arquivo
+        safe_title = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in title)
+        dialog.set_current_name(f"{safe_title}.csv")
+
+        # Adicionar filtros de formato
+        filter_csv = Gtk.FileFilter()
+        filter_csv.set_name("CSV File (*.csv)")
+        filter_csv.add_pattern("*.csv")
+        dialog.add_filter(filter_csv)
+
+        filter_excel = Gtk.FileFilter()
+        filter_excel.set_name("Excel File (*.xlsx)")
+        filter_excel.add_pattern("*.xlsx")
+        dialog.add_filter(filter_excel)
+
+        filter_json = Gtk.FileFilter()
+        filter_json.set_name("JSON File (*.json)")
+        filter_json.add_pattern("*.json")
+        dialog.add_filter(filter_json)
+
+        # Callback de resposta
+        dialog.connect("response", self._on_save_table_dialog_response, dataframe)
+        dialog.show()
+
+    def _on_save_table_dialog_response(self, dialog, response, dataframe):
+        """Callback quando o usuário responde ao diálogo de salvar"""
+        if response == Gtk.ResponseType.ACCEPT:
+            file = dialog.get_file()
+            if file:
+                filepath = file.get_path()
+                try:
+                    # Determinar formato pelo extensão
+                    if filepath.endswith('.xlsx'):
+                        dataframe.to_excel(filepath, index=False)
+                    elif filepath.endswith('.json'):
+                        dataframe.to_json(filepath, orient='records', indent=2)
+                    else:
+                        # Default para CSV
+                        dataframe.to_csv(filepath, index=False)
+                    print(f"✓ Tabela salva em: {filepath}", file=sys.__stdout__)
+                except Exception as e:
+                    print(f"❌ Erro ao salvar tabela: {e}", file=sys.__stdout__)
+
+        dialog.destroy()
 
 
 # ===================== Data (JSON) =====================
