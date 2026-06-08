@@ -337,9 +337,9 @@ This project is currently in **active development** (v0.1.0). Core features are 
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 or later.
+This project is licensed under the MIT License.
 
-See [COPYING](COPYING) for details.
+See [LICENSE](LICENSE) for details.
 
 ## Author
 
